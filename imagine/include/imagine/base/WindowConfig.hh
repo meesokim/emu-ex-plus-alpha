@@ -15,7 +15,7 @@
 	You should have received a copy of the GNU General Public License
 	along with Imagine.  If not, see <http://www.gnu.org/licenses/> */
 
-#include <imagine/engine-globals.h>
+#include <imagine/config/defs.hh>
 #include <imagine/base/Screen.hh>
 #include <imagine/util/DelegateFunc.hh>
 
@@ -50,7 +50,7 @@ private:
 	Point2D<int> pos{-1, -1};
 	Point2D<int> size_{0, 0};
 	Point2D<int> minSize{320, 240};
-	GLBufferConfig glConfig_{};
+	NativeWindowFormat fmt{};
 	Screen *screen_{};
 	BaseWindow::SurfaceChangeDelegate onSurfaceChange_;
 	BaseWindow::DrawDelegate onDraw_;
@@ -75,7 +75,7 @@ public:
 
 	void setPosition(Point2D<int> pos)
 	{
-		var_selfs(pos);
+		this->pos = pos;
 	}
 
 	Point2D<int> position() const
@@ -95,7 +95,7 @@ public:
 
 	void setSize(Point2D<int> size_)
 	{
-		var_selfs(size_);
+		this->size_ = size_;
 	}
 
 	Point2D<int> size() const
@@ -105,7 +105,7 @@ public:
 
 	void setMinimumSize(Point2D<int> minSize)
 	{
-		var_selfs(minSize);
+		this->minSize = minSize;
 	}
 
 	Point2D<int> minimumSize() const
@@ -113,14 +113,14 @@ public:
 		return minSize;
 	}
 
-	void setGLConfig(GLBufferConfig glConfig_)
+	void setFormat(NativeWindowFormat fmt)
 	{
-		var_selfs(glConfig_);
+		this->fmt = fmt;
 	}
 
-	GLBufferConfig glConfig() const
+	NativeWindowFormat format() const
 	{
-		return glConfig_;
+		return fmt;
 	}
 
 	void setScreen(Screen &screen)

@@ -15,15 +15,15 @@
 	You should have received a copy of the GNU General Public License
 	along with Imagine.  If not, see <http://www.gnu.org/licenses/> */
 
-#include <imagine/engine-globals.h>
+#include <imagine/config/defs.hh>
 #include <imagine/util/bits.h>
 #include <imagine/util/rectangle2.h>
 #include <imagine/util/DelegateFunc.hh>
 #include <imagine/base/baseDefs.hh>
 #include <imagine/fs/FSDefs.hh>
-#if defined CONFIG_BASE_ANDROID
+#if defined __ANDROID__
 #include <imagine/base/android/android.hh>
-#elif defined CONFIG_BASE_IOS
+#elif defined __APPLE__ && TARGET_OS_IPHONE
 #include <imagine/base/iphone/public.hh>
 #endif
 
@@ -37,13 +37,8 @@ static void exit() { exit(0); }
 [[noreturn]] void abort();
 
 // Inter-process messages
-#if defined CONFIG_BASE_DBUS
 void registerInstance(const char *appID, int argc, char** argv);
 void setAcceptIPC(const char *appID, bool on);
-#else
-static void registerInstance(const char *appID, int argc, char** argv) {}
-static void setAcceptIPC(const char *appID, bool on) {}
-#endif
 
 // App run state
 static const uint APP_RUNNING = 0, APP_PAUSED = 1, APP_EXITING = 2;
@@ -57,6 +52,7 @@ void openURL(const char *url);
 FS::PathString assetPath();
 FS::PathString documentsPath();
 FS::PathString storagePath();
+FS::PathString libPath();
 bool documentsPathIsShared();
 
 // OS UI management (status & navigation bar)
@@ -77,32 +73,25 @@ uint defaultSystemOrientations();
 void setDeviceOrientationChangeSensor(bool on);
 
 // vibration support
-#if defined CONFIG_BASE_ANDROID && !defined CONFIG_MACHINE_OUYA
 bool hasVibrator();
 void vibrate(uint ms);
-#define CONFIG_BASE_SUPPORTS_VIBRATOR
-#else
-static bool hasVibrator() { return false; }
-static void vibrate(uint ms) {}
-#endif
 
 // Notification/Launcher icons
-#if defined CONFIG_BASE_ANDROID
 void addNotification(const char *onShow, const char *title, const char *message);
 void addLauncherIcon(const char *name, const char *path);
-#else
-static void addNotification(const char *onShow, const char *title, const char *message) {}
-static void addLauncherIcon(const char *name, const char *path) {}
-#endif
 
 // Power Management
-#if defined(CONFIG_BASE_ANDROID) || defined(CONFIG_BASE_IOS)
 void setIdleDisplayPowerSave(bool on);
 void endIdleByUserActivity();
-#else
-static void setIdleDisplayPowerSave(bool on) {}
-static void endIdleByUserActivity() {}
-#endif
+
+// Permissions
+enum Permission
+{
+	WRITE_EXT_STORAGE
+};
+
+bool usesPermission(Permission p);
+bool requestPermission(Permission p);
 
 // App Callbacks
 
@@ -141,24 +130,32 @@ void setOnDeviceOrientationChanged(DeviceOrientationChangedDelegate del);
 void setOnSystemOrientationChanged(SystemOrientationChangedDelegate del);
 
 // Called on app startup
-[[gnu::cold]] CallResult onInit(int argc, char** argv);
+[[gnu::cold]] void onInit(int argc, char** argv);
 
 } // Base
 
 namespace Config
 {
 
-#ifdef CONFIG_BASE_SUPPORTS_VIBRATOR
+#if defined __ANDROID__ && !defined CONFIG_MACHINE_OUYA
+#define CONFIG_BASE_SUPPORTS_VIBRATOR
 static constexpr bool BASE_SUPPORTS_VIBRATOR = true;
 #else
 static constexpr bool BASE_SUPPORTS_VIBRATOR = false;
 #endif
 
-#if defined CONFIG_BASE_ANDROID || defined CONFIG_BASE_IOS || defined CONFIG_ENV_WEBOS
+#if defined __ANDROID__ || (defined __APPLE__ && TARGET_OS_IPHONE) || defined CONFIG_ENV_WEBOS
 #define CONFIG_BASE_CAN_BACKGROUND_APP
-static const bool BASE_CAN_BACKGROUND_APP = true;
+static constexpr bool BASE_CAN_BACKGROUND_APP = true;
 #else
-static const bool BASE_CAN_BACKGROUND_APP = false;
+static constexpr bool BASE_CAN_BACKGROUND_APP = false;
+#endif
+
+#if defined __ANDROID__ || (defined __APPLE__ && TARGET_OS_IPHONE)
+#define CONFIG_BASE_SUPPORTS_ORIENTATION_SENSOR
+static constexpr bool BASE_SUPPORTS_ORIENTATION_SENSOR = true;
+#else
+static constexpr bool BASE_SUPPORTS_ORIENTATION_SENSOR = false;
 #endif
 
 }

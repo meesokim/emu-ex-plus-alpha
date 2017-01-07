@@ -22,8 +22,8 @@ static_assert(__has_feature(objc_arc), "This file requires ARC");
 #include <imagine/logger/logger.h>
 #include "../common/windowPrivate.hh"
 #include <imagine/input/Input.hh>
-#include <imagine/input/DragPointer.hh>
 #include <imagine/base/GLContext.hh>
+#include <imagine/util/algorithm.h>
 #include "ios.hh"
 #if !defined __ARM_ARCH_6K__
 #import <OpenGLES/ES2/gl.h>
@@ -50,14 +50,8 @@ static struct TouchState
 {
 	constexpr TouchState() {}
 	UITouch *touch = nil;
-	DragPointer dragState;
 } m[Config::Input::MAX_POINTERS];
 static uint numCursors = Config::Input::MAX_POINTERS;
-
-DragPointer *dragState(int p)
-{
-	return &m[p].dragState;
-}
 
 }
 
@@ -173,7 +167,7 @@ static IG::Point2D<int> makeLayerGLDrawable(EAGLContext *context,  CAEAGLLayer *
 
 - (void)dealloc
 {
-	assert(Base::GLContext::current());
+	assert(Base::GLContext::current({}));
 	[self deleteDrawable];
 }
 
@@ -197,13 +191,16 @@ static IG::Point2D<int> makeLayerGLDrawable(EAGLContext *context,  CAEAGLLayer *
 {
 	logMsg("in layoutSubviews");
 	using namespace Base;
-	assert(GLContext::current());
+	assert(GLContext::current({}));
 	[self deleteDrawable];
 	auto size = makeLayerGLDrawable([EAGLContext currentContext], (CAEAGLLayer*)self.layer,
 		framebuffer, colorRenderbuffer, depthRenderbuffer);
 	glBindRenderbuffer(GL_RENDERBUFFER, colorRenderbuffer);
+	iterateTimes(Window::windows(), i)
+	{
+		Window::window(i)->resetSurface();
+	}
 	auto &win = *Base::windowForUIWindow(self.window);
-	onGLDrawableChanged.callCopySafe(&win);
 	updateWindowSizeAndContentRect(win, size.x, size.y, sharedApp);
 	win.postDraw();
 	//logMsg("exiting layoutSubviews");
@@ -216,7 +213,7 @@ static IG::Point2D<int> makeLayerGLDrawable(EAGLContext *context,  CAEAGLLayer *
 	auto &win = *Base::deviceWindow();
 	for(UITouch* touch in touches)
 	{
-		iterateTimes(sizeofArray(m), i) // find a free touch element
+		iterateTimes(IG::size(m), i) // find a free touch element
 		{
 			if(Input::m[i].touch == nil)
 			{
@@ -227,8 +224,7 @@ static IG::Point2D<int> makeLayerGLDrawable(EAGLContext *context,  CAEAGLLayer *
 				pos.y *= win.pointScale;
 				auto time = Input::Time::makeWithSecsD((double)[touch timestamp]);
 				auto transPos = transformInputPos(win, {(int)pos.x, (int)pos.y});
-				p.dragState.pointerEvent(Input::Pointer::LBUTTON, PUSHED, transPos);
-				win.dispatchInputEvent(Input::Event{i, Event::MAP_POINTER, Input::Pointer::LBUTTON, PUSHED, transPos.x, transPos.y, true, time, nullptr});
+				win.dispatchInputEvent(Input::Event{i, Event::MAP_POINTER, Input::Pointer::LBUTTON, 1, PUSHED, transPos.x, transPos.y, (int)i, true, time, nullptr});
 				break;
 			}
 		}
@@ -242,7 +238,7 @@ static IG::Point2D<int> makeLayerGLDrawable(EAGLContext *context,  CAEAGLLayer *
 	auto &win = *Base::deviceWindow();
 	for(UITouch* touch in touches)
 	{
-		iterateTimes(sizeofArray(m), i) // find the touch element
+		iterateTimes(IG::size(m), i) // find the touch element
 		{
 			if(Input::m[i].touch == touch)
 			{
@@ -252,8 +248,7 @@ static IG::Point2D<int> makeLayerGLDrawable(EAGLContext *context,  CAEAGLLayer *
 				pos.y *= win.pointScale;
 				auto time = Input::Time::makeWithSecsD((double)[touch timestamp]);
 				auto transPos = transformInputPos(win, {(int)pos.x, (int)pos.y});
-				p.dragState.pointerEvent(Input::Pointer::LBUTTON, MOVED, transPos);
-				win.dispatchInputEvent(Input::Event{i, Event::MAP_POINTER, Input::Pointer::LBUTTON, MOVED, transPos.x, transPos.y, true, time, nullptr});
+				win.dispatchInputEvent(Input::Event{i, Event::MAP_POINTER, Input::Pointer::LBUTTON, 1, MOVED, transPos.x, transPos.y, (int)i, true, time, nullptr});
 				break;
 			}
 		}
@@ -267,7 +262,7 @@ static IG::Point2D<int> makeLayerGLDrawable(EAGLContext *context,  CAEAGLLayer *
 	auto &win = *Base::deviceWindow();
 	for(UITouch* touch in touches)
 	{
-		iterateTimes(sizeofArray(m), i) // find the touch element
+		iterateTimes(IG::size(m), i) // find the touch element
 		{
 			if(Input::m[i].touch == touch)
 			{
@@ -278,8 +273,7 @@ static IG::Point2D<int> makeLayerGLDrawable(EAGLContext *context,  CAEAGLLayer *
 				pos.y *= win.pointScale;
 				auto time = Input::Time::makeWithSecsD((double)[touch timestamp]);
 				auto transPos = transformInputPos(win, {(int)pos.x, (int)pos.y});
-				p.dragState.pointerEvent(Input::Pointer::LBUTTON, RELEASED, transPos);
-				win.dispatchInputEvent(Input::Event{i, Event::MAP_POINTER, Input::Pointer::LBUTTON, RELEASED, transPos.x, transPos.y, true, time, nullptr});
+				win.dispatchInputEvent(Input::Event{i, Event::MAP_POINTER, Input::Pointer::LBUTTON, 0, RELEASED, transPos.x, transPos.y, (int)i, true, time, nullptr});
 				break;
 			}
 		}

@@ -3,6 +3,7 @@
  *
  * Written by
  *  Teemu Rantanen <tvr@cs.hut.fi>
+ *  Marco van den Heuvel <blackystardust68@yahoo.com>
  *
  * Resource and cmdline code by
  *  Ettore Perazzoli <ettore@comm2000.it>
@@ -48,6 +49,7 @@
 #include "log.h"
 #include "machine.h"
 #include "maincpu.h"
+#include "monitor.h"
 #include "platform.h"
 #include "resources.h"
 #include "sound.h"
@@ -175,6 +177,14 @@ static sound_register_devices_t sound_register_devices[] = {
 
 #ifdef USE_LAMEMP3
     { "mp3", sound_init_mp3_device, SOUND_RECORD_DEVICE },
+#endif
+
+#ifdef USE_FLAC
+    { "flac", sound_init_flac_device, SOUND_RECORD_DEVICE },
+#endif
+
+#ifdef USE_VORBIS
+    { "ogg", sound_init_vorbis_device, SOUND_RECORD_DEVICE },
 #endif
 
 #ifndef EMUFRAMEWORK_BUILD
@@ -486,11 +496,7 @@ static int set_suspend_time(int val, void *param)
 static int set_speed_adjustment_setting(int val, void *param)
 {
     if (val == SOUND_ADJUST_DEFAULT) {
-        if (machine_class == VICE_MACHINE_VSID) {
-            speed_adjustment_setting = SOUND_ADJUST_EXACT;
-        } else {
-            speed_adjustment_setting = SOUND_ADJUST_FLEXIBLE;
-        }
+        speed_adjustment_setting = SOUND_ADJUST_EXACT;
     } else {
         switch (val) {
             case SOUND_ADJUST_FLEXIBLE:
@@ -1050,15 +1056,15 @@ int sound_open(void)
      *       faster and compensate errors better. */
     #ifdef EMUFRAMEWORK_BUILD
     fragsize = 1;
-		#else
+    #else
     fragsize = speed / ((rfsh_per_sec < 1.0) ? 1 : ((int)rfsh_per_sec))
                / fragment_divisor[fragment_size];
-		#endif
     if (pdev) {
         if (channels <= pdev->max_channels) {
             fragsize *= channels;
         }
     }
+    #endif
 
     for (i = 1; 1 << i < fragsize; i++) {
     }
@@ -1620,7 +1626,7 @@ void sound_init(unsigned int clock_rate, unsigned int ticks_per_frame)
 
     for (i = 0; sound_register_devices[i].name; i++) {
         sound_register_devices[i].init();
-        tmplist = lib_msprintf("%s %s", devlist, sound_devices[i]->name);
+        tmplist = lib_msprintf("%s %s", devlist, sound_register_devices[i].name);
         lib_free(devlist);
         devlist = tmplist;
     }
@@ -1635,6 +1641,15 @@ long sound_sample_position(void)
     return (snddata.clkstep == 0)
            ? 0 : (long)((SOUNDCLK_CONSTANT(maincpu_clk) - snddata.fclk)
                         / snddata.clkstep);
+}
+
+int sound_dump(int chipno)
+{
+    if (chipno >= snddata.sound_chip_channels) {
+        return -1;
+    }
+    mon_out("%s\n", sound_machine_dump_state(snddata.psid[chipno]));
+    return 0;
 }
 
 int sound_read(WORD addr, int chipno)

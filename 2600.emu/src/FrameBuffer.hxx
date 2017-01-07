@@ -3,6 +3,11 @@
 #pragma once
 
 #include <stella/gui/Rect.hxx>
+#include "EventHandler.hxx"
+#include <imagine/pixmap/Pixmap.hh>
+
+class Console;
+class OSystem;
 class TIA;
 
 enum FBInitStatus {
@@ -21,7 +26,7 @@ public:
 
 	FrameBuffer() {}
 
-	void render(uInt16 *pixBuff, TIA &tia);
+	void render(IG::Pixmap pix, TIA &tia);
 
 	FrameBuffer &tiaSurface() { return *this; }
 

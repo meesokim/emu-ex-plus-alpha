@@ -19,6 +19,8 @@
 #include <imagine/base/Screen.hh>
 #include <imagine/base/Base.hh>
 #include <imagine/time/Time.hh>
+#include <imagine/util/algorithm.h>
+#include <imagine/logger/logger.h>
 #include "internal.hh"
 #include "android.hh"
 #include "../common/screenPrivate.hh"
@@ -75,8 +77,14 @@ void initScreens(JNIEnv *env, jobject activity, jclass activityCls)
 							}
 							if(!screen_.isFull())
 							{
+								auto disp = jGetDisplay(env, thiz, id);
+								if(!disp)
+								{
+									logWarn("display ID:%d was added but doesn't exist", (int)id);
+									break;
+								}
 								Screen *s = new Screen();
-								s->init(env, jGetDisplay(env, thiz, id), nullptr, false);
+								s->init(env, disp, nullptr, false);
 								Screen::addScreen(s);
 								if(Screen::onChange)
 									Screen::onChange(*s, {Screen::Change::ADDED});
@@ -100,7 +108,7 @@ void initScreens(JNIEnv *env, jobject activity, jclass activityCls)
 				})
 			}
 		};
-		env->RegisterNatives(displayListenerHelperCls, method, sizeofArray(method));
+		env->RegisterNatives(displayListenerHelperCls, method, IG::size(method));
 
 		// get the current presentation screens
 		JavaInstMethod<jobject()> jGetPresentationDisplays{env, displayListenerHelperCls, "getPresentationDisplays", "()[Landroid/view/Display;"};
@@ -154,7 +162,7 @@ void AndroidScreen::init(JNIEnv *env, jobject aDisplay, jobject metrics, bool is
 	}
 	else
 	{
-		id = jGetDisplayId(env, aDisplay);;
+		id = jGetDisplayId(env, aDisplay);
 		logMsg("init display with id: %d", id);
 	}
 	#endif

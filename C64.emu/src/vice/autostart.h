@@ -31,6 +31,7 @@
 
 #include "types.h"
 
+#define AUTOSTART_MODE_NONE -1
 #define AUTOSTART_MODE_RUN  0
 #define AUTOSTART_MODE_LOAD 1
 
@@ -45,7 +46,7 @@ extern void autostart_reinit(CLOCK _min_cycles,
                              int _handle_drive_true_emulation, int _blnsw,
                              int _pnt, int _pntr, int _lnmx);
 
-extern int autostart_autodetect(const char *file_name,
+extern VICE_API int autostart_autodetect(const char *file_name,
                                 const char *program_name,
                                 unsigned int program_number,
                                 unsigned int runmode);

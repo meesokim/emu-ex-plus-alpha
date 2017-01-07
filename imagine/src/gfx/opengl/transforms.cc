@@ -69,7 +69,7 @@ void setProjectionMatrix(const Mat4 &mat)
 	projectionMatPreTransformed = mat;
 	if(projectionMatRot)
 	{
-		logMsg("rotated projection matrix by %f degrees", (double)IG::toDegrees(projectionMatRot));
+		logMsg("rotated projection matrix by %f degrees", (double)IG::degrees(projectionMatRot));
 		auto rotatedMat = mat.rollRotate(projectionMatRot);
 		setGLProjectionMatrix(rotatedMat);
 	}
@@ -87,8 +87,8 @@ void animateProjectionMatrixRotation(Angle srcAngle, Angle destAngle)
 		[](Base::Screen::FrameParams params)
 		{
 			using namespace Base;
-			setCurrentWindow(&mainWindow());
 			//logMsg("animating rotation");
+			bind();
 			projAngleM.update(1);
 			setProjectionMatrixRotation(projAngleM.now());
 			setProjectionMatrix(projectionMatrix());

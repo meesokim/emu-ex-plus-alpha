@@ -17,7 +17,7 @@
 #include <imagine/input/Input.hh>
 #include <imagine/logger/logger.h>
 #include <imagine/base/Base.hh>
-#include <imagine/util/strings.h>
+#include <imagine/util/string.h>
 #include "../common/windowPrivate.hh"
 #include "../common/screenPrivate.hh"
 #include "../common/basePrivate.hh"
@@ -25,6 +25,9 @@
 #include "internal.hh"
 #include "xdnd.hh"
 #include "xlibutils.h"
+
+#define ASCII_LF 0xA
+#define ASCII_CR 0xD
 
 namespace Base
 {
@@ -61,13 +64,36 @@ static void fileURLToPath(char *url)
 		else // decode the next 2 chars as hex digits
 		{
 			srcPos++;
-			uchar msd = hexToInt(pathStart[srcPos]) << 4;
+			int msd = char_hexToInt(pathStart[srcPos]) << 4;
 			srcPos++;
-			uchar lsd = hexToInt(pathStart[srcPos]);
+			int lsd = char_hexToInt(pathStart[srcPos]);
 			url[destPos] = msd + lsd;
 		}
 	}
 	url[destPos] = '\0';
+}
+
+static void ewmhFullscreen(Display *dpy, ::Window win, int action)
+{
+	assert(action == _NET_WM_STATE_REMOVE || action == _NET_WM_STATE_ADD || action == _NET_WM_STATE_TOGGLE);
+
+	XEvent xev{};
+	xev.xclient.type = ClientMessage;
+	xev.xclient.send_event = True;
+	xev.xclient.message_type = XInternAtom(dpy, "_NET_WM_STATE", False);
+	xev.xclient.window = win;
+	xev.xclient.format = 32;
+	xev.xclient.data.l[0] = action;
+	xev.xclient.data.l[1] = XInternAtom(dpy, "_NET_WM_STATE_FULLSCREEN", False);
+
+	// TODO: test if DefaultRootWindow(dpy) works on other screens
+	XWindowAttributes attr;
+	XGetWindowAttributes(dpy, win, &attr);
+	if(!XSendEvent(dpy, attr.root, False,
+		SubstructureRedirectMask | SubstructureNotifyMask, &xev))
+	{
+		logWarn("couldn't send root window NET_WM_STATE message");
+	}
 }
 
 void toggleFullScreen(::Window xWin)
@@ -203,7 +229,7 @@ void initXScreens()
 	#endif
 }
 
-CallResult initWindowSystem(EventLoopFileSource &eventSrc)
+CallResult initWindowSystem(EventLoop loop, FDEventSource &eventSrc)
 {
 	#ifndef CONFIG_BASE_X11_EGL
 	// needed to call glXWaitVideoSyncSGI in separate thread
@@ -216,9 +242,9 @@ CallResult initWindowSystem(EventLoopFileSource &eventSrc)
 		return IO_ERROR;
 	}
 	initXScreens();
-	initFrameTimer();
-	doOrAbort(Input::init());
-	eventSrc.initX(ConnectionNumber(dpy));
+	initFrameTimer(loop);
+	Input::init();
+	eventSrc = FDEventSource::makeXServerAddedToEventLoop(ConnectionNumber(dpy), loop);
 	return OK;
 }
 

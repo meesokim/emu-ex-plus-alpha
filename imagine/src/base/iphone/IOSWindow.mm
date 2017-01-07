@@ -16,23 +16,17 @@
 static_assert(__has_feature(objc_arc), "This file requires ARC");
 #define LOGTAG "IOSWindow"
 #import "MainApp.hh"
-#import <imagine/base/iphone/EAGLView.hh>
 #import <QuartzCore/QuartzCore.h>
-#import <OpenGLES/EAGLDrawable.h>
 #include "../common/windowPrivate.hh"
 #include "private.hh"
 #include <imagine/base/Base.hh>
-#include <imagine/base/GLContext.hh>
 #include <imagine/logger/logger.h>
+#include <imagine/util/algorithm.h>
 #include "ios.hh"
 
 #ifndef GL_RENDERBUFFER
 #define GL_RENDERBUFFER GL_RENDERBUFFER_OES
 #endif
-
-@interface ImagineUIViewController : UIViewController
-
-@end
 
 namespace Base
 {
@@ -110,7 +104,7 @@ Window *deviceWindow()
 
 IG::PixelFormat Window::defaultPixelFormat()
 {
-	return Config::MACHINE_IS_GENERIC_ARMV6 ? PIXEL_RGB565 : PIXEL_RGB888;
+	return Config::MACHINE_IS_GENERIC_ARMV6 ? PIXEL_RGB565 : PIXEL_RGBA8888;
 }
 
 bool Window::hasSurface()
@@ -173,10 +167,10 @@ IG::Point2D<float> Window::pixelSizeAsMM(IG::Point2D<int> size)
 	return {(size.x / (float)dpi) * 25.4f, (size.y / (float)dpi) * 25.4f};
 }
 
-CallResult Window::init(const WindowConfig &config)
+std::error_code Window::init(const WindowConfig &config)
 {
 	if(uiWin_)
-		return OK;
+		return {};
 	BaseWindow::init(config);
 	if(!Config::BASE_MULTI_WINDOW && windows())
 	{
@@ -207,29 +201,11 @@ CallResult Window::init(const WindowConfig &config)
 	validO = defaultValidOrientationMask();
 	#endif
 	updateWindowSizeAndContentRect(*this, rect.size.width * pointScale, rect.size.height * pointScale, sharedApp);
-	
-	// Create the OpenGL ES view and add it to the Window
-	glView_ = (void*)CFBridgingRetain([[EAGLView alloc] initWithFrame:rect]);
-	if(config.glConfig().useRGB565)
-	{
-		[glView() setDrawableColorFormat:kEAGLColorFormatRGB565];
-	}
-	if(*screen() == mainScreen())
-	{
-		glView().multipleTouchEnabled = YES;
-	}
-	else
+	if(*screen() != mainScreen())
 	{
 		uiWin().screen = screen()->uiScreen();
 	}
-	//logMsg("setting root view controller");
-	auto rootViewCtrl = [[ImagineUIViewController alloc] init];
-	#if __IPHONE_OS_VERSION_MIN_REQUIRED < 70000
-	rootViewCtrl.wantsFullScreenLayout = YES;
-	#endif
-	rootViewCtrl.view = glView();
-	uiWin().rootViewController = rootViewCtrl;
-	return OK;
+	return {};
 }
 
 void Window::deinit()
@@ -239,8 +215,6 @@ void Window::deinit()
 	if(uiWin_)
 	{
 		logMsg("deinit window %p", uiWin_);
-		CFRelease(glView_);
-		glView_ = nullptr;
 		CFRelease(uiWin_);
 		uiWin_ = nullptr;
 	}
@@ -268,9 +242,19 @@ Window *windowForUIWindow(UIWindow *uiWin)
 	return nullptr;
 }
 
+void IOSWindow::resetSurface()
+{
+	surfaceChange.addReset();
+}
+
 void Window::setTitle(const char *name) {}
 
 void Window::setAcceptDnd(bool on) {}
+
+NativeWindow Window::nativeObject()
+{
+	return uiWin_;
+}
 
 }
 

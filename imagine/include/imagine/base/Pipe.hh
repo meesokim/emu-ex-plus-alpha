@@ -15,9 +15,9 @@
 	You should have received a copy of the GNU General Public License
 	along with Imagine.  If not, see <http://www.gnu.org/licenses/> */
 
-#include <imagine/engine-globals.h>
+#include <imagine/config/defs.hh>
 #include <imagine/util/DelegateFunc.hh>
-#include <imagine/base/EventLoopFileSource.hh>
+#include <imagine/base/EventLoop.hh>
 
 namespace Base
 {
@@ -26,13 +26,13 @@ class Pipe
 {
 private:
 	int msgPipe[2] {-1, -1};
-	EventLoopFileSource fdSrc;
+	FDEventSource fdSrc;
 
 public:
 	using Delegate = DelegateFunc<int (Pipe &pipe)>;
 	Delegate del;
 
-	void init(Delegate del);
+	void init(EventLoop loop, Delegate del);
 	void deinit();
 	bool read(void *data, uint size);
 	bool write(const void *data, uint size);

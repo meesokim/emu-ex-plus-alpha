@@ -36,7 +36,7 @@ static Gfx::Shader makeEffectVertexShader(const char *src)
 		posDefs,
 		src
 	};
-	return Gfx::makeCompatShader(shaderSrc, sizeofArray(shaderSrc), Gfx::SHADER_VERTEX);
+	return Gfx::makeCompatShader(shaderSrc, IG::size(shaderSrc), Gfx::SHADER_VERTEX);
 }
 
 static Gfx::Shader makeEffectFragmentShader(const char *src, bool isExternalTex)
@@ -46,19 +46,22 @@ static Gfx::Shader makeEffectFragmentShader(const char *src, bool isExternalTex)
 	{
 		const char *shaderSrc[]
 		{
-			"#extension GL_OES_EGL_image_external : require\n",
+			// extensions -> shaderSrc[0]
+			"#extension GL_OES_EGL_image_external : enable\n"
+			"#extension GL_OES_EGL_image_external_essl3 : enable\n",
+			// texture define -> shaderSrc[1]
 			"#define TEXTURE texture2D\n",
 			fragDefs,
 			"uniform lowp samplerExternalOES TEX;\n",
 			src
 		};
-		auto shader = Gfx::makeCompatShader(shaderSrc, sizeofArray(shaderSrc), Gfx::SHADER_FRAGMENT);
+		auto shader = Gfx::makeCompatShader(shaderSrc, IG::size(shaderSrc), Gfx::SHADER_FRAGMENT);
 		if(!shader)
 		{
 			// Adreno 320 compiler missing texture2D for external textures with GLSL 3.0 ES
 			logWarn("retrying compile with Adreno GLSL 3.0 ES work-around");
 			shaderSrc[1] = "#define TEXTURE texture\n";
-			shader = Gfx::makeCompatShader(shaderSrc, sizeofArray(shaderSrc), Gfx::SHADER_FRAGMENT);
+			shader = Gfx::makeCompatShader(shaderSrc, IG::size(shaderSrc), Gfx::SHADER_FRAGMENT);
 		}
 		return shader;
 	}
@@ -66,12 +69,12 @@ static Gfx::Shader makeEffectFragmentShader(const char *src, bool isExternalTex)
 	{
 		const char *shaderSrc[]
 		{
+			"#define TEXTURE texture\n",
 			fragDefs,
-			"#define TEXTURE texture\n"
 			"uniform sampler2D TEX;\n",
 			src
 		};
-		return Gfx::makeCompatShader(shaderSrc, sizeofArray(shaderSrc), Gfx::SHADER_FRAGMENT);
+		return Gfx::makeCompatShader(shaderSrc, IG::size(shaderSrc), Gfx::SHADER_FRAGMENT);
 	}
 }
 
@@ -158,15 +161,14 @@ void VideoImageEffect::compile(bool isExternalTex)
 	renderTargetScale = desc->scale;
 	renderTarget_.init();
 	initRenderTargetTexture();
-	ErrorMessage msg{};
-	if(compileEffect(*desc, isExternalTex, false, &msg) != OK)
+	auto err = compileEffect(*desc, isExternalTex, false);
+	if(err.code())
 	{
-		ErrorMessage fallbackMsg{};
-		auto r = compileEffect(*desc, isExternalTex, true, &fallbackMsg);
-		if(r != OK)
+		auto fallbackErr = compileEffect(*desc, isExternalTex, true);
+		if(fallbackErr.code())
 		{
 			// print error from original compile if fallback effect not found
-			popup.printf(3, true, "%s", r == NOT_FOUND ? msg.data() : fallbackMsg.data());
+			popup.printf(3, true, "%s", err.code().value() == ENOENT ? err.what() : fallbackErr.what());
 			deinit();
 			return;
 		}
@@ -174,16 +176,14 @@ void VideoImageEffect::compile(bool isExternalTex)
 	}
 }
 
-CallResult VideoImageEffect::compileEffect(EffectDesc desc, bool isExternalTex, bool useFallback, ErrorMessage *msg)
+std::system_error VideoImageEffect::compileEffect(EffectDesc desc, bool isExternalTex, bool useFallback)
 {
 	{
 		auto file = openAppAssetIO(FS::makePathStringPrintf("shaders/%s%s", useFallback ? "fallback-" : "", desc.vShaderFilename));
 		if(!file)
 		{
 			deinitProgram();
-			if(msg)
-				string_printf(*msg, "Can't open file: %s", desc.vShaderFilename);
-			return NOT_FOUND;
+			return {{ENOENT, std::system_category()}, string_makePrintf<128>("Can't open file: %s", desc.vShaderFilename).data()};
 		}
 		auto fileSize = file.size();
 		char text[fileSize + 1];
@@ -196,10 +196,8 @@ CallResult VideoImageEffect::compileEffect(EffectDesc desc, bool isExternalTex, 
 		if(!vShader)
 		{
 			deinitProgram();
-			if(msg)
-				string_copy(*msg, "GPU rejected shader (vertex compile error)");
 			Gfx::autoReleaseShaderCompiler();
-			return INVALID_PARAMETER;
+			return {{EINVAL, std::system_category()}, "GPU rejected shader (vertex compile error)"};
 		}
 	}
 	{
@@ -207,10 +205,8 @@ CallResult VideoImageEffect::compileEffect(EffectDesc desc, bool isExternalTex, 
 		if(!file)
 		{
 			deinitProgram();
-			if(msg)
-				string_printf(*msg, "Can't open file: %s", desc.fShaderFilename);
 			Gfx::autoReleaseShaderCompiler();
-			return NOT_FOUND;
+			return {{ENOENT, std::system_category()}, string_makePrintf<128>("Can't open file: %s", desc.fShaderFilename).data()};
 		}
 		auto fileSize = file.size();
 		char text[fileSize + 1];
@@ -223,10 +219,8 @@ CallResult VideoImageEffect::compileEffect(EffectDesc desc, bool isExternalTex, 
 		if(!fShader)
 		{
 			deinitProgram();
-			if(msg)
-				string_copy(*msg, "GPU rejected shader (fragment compile error)");
 			Gfx::autoReleaseShaderCompiler();
-			return INVALID_PARAMETER;
+			return {{EINVAL, std::system_category()}, "GPU rejected shader (fragment compile error)"};
 		}
 	}
 	logMsg("linking program");
@@ -234,17 +228,15 @@ CallResult VideoImageEffect::compileEffect(EffectDesc desc, bool isExternalTex, 
 	if(!prog.link())
 	{
 		deinitProgram();
-		if(msg)
-			string_copy(*msg, "GPU rejected shader (link error)");
 		Gfx::autoReleaseShaderCompiler();
-		return INVALID_PARAMETER;
+		return {{EINVAL, std::system_category()}, "GPU rejected shader (link error)"};
 	}
 	srcTexelDeltaU = prog.uniformLocation("srcTexelDelta");
 	srcTexelHalfDeltaU = prog.uniformLocation("srcTexelHalfDelta");
 	srcPixelsU = prog.uniformLocation("srcPixels");
 	updateProgramUniforms();
 	Gfx::autoReleaseShaderCompiler();
-	return OK;
+	return {{}};
 }
 
 void VideoImageEffect::updateProgramUniforms()
@@ -260,6 +252,8 @@ void VideoImageEffect::updateProgramUniforms()
 
 void VideoImageEffect::setImageSize(IG::WP size)
 {
+	if(size == IG::WP{0, 0})
+		return;
 	if(inputImgSize == size)
 		return;
 	inputImgSize = size;

@@ -22,6 +22,9 @@
 #include <emuframework/TurboInput.hh>
 #include <emuframework/EmuSystem.hh>
 #include <emuframework/inGameActionKeys.hh>
+#ifdef CONFIG_EMUFRAMEWORK_VCONTROLS
+#include <emuframework/VController.hh>
+#endif
 #include <imagine/util/container/DLList.hh>
 
 struct KeyCategory
@@ -70,7 +73,7 @@ struct KeyConfig
 	uint devSubtype;
 	char name[MAX_KEY_CONFIG_NAME_SIZE];
 	using Key = Input::Key;
-	using KeyArray = Key[MAX_KEY_CONFIG_KEYS];
+	using KeyArray = std::array<Key, MAX_KEY_CONFIG_KEYS>;
 	KeyArray key_;
 
 	bool operator ==(KeyConfig const& rhs) const
@@ -102,7 +105,7 @@ struct KeyConfig
 
 	void unbindCategory(const KeyCategory &category)
 	{
-		mem_zero(key(category), category.keys * sizeof(Key));
+		std::fill_n(key(category), category.keys, 0);
 	}
 
 	static const KeyConfig *defaultConfigsForInputMap(uint map, uint &size);
@@ -170,8 +173,8 @@ struct InputDeviceConfig
 	bool setICadeMode(bool on);
 	bool iCadeMode();
 	#endif
-	uint8 joystickAxisAsDpadBits();
-	void setJoystickAxisAsDpadBits(uint8 axisMask);
+	uint joystickAxisAsDpadBits();
+	void setJoystickAxisAsDpadBits(uint axisMask);
 	const KeyConfig &keyConf();
 	bool setKeyConf(const KeyConfig &kConf);
 	void setDefaultKeyConf();
@@ -189,7 +192,7 @@ struct KeyMapping
 	static constexpr uint maxKeyActions = 4;
 	typedef uint8 Action;
 	typedef Action ActionGroup[maxKeyActions];
-	ActionGroup *inputDevActionTablePtr[Input::MAX_DEVS] {nullptr};
+	ActionGroup *inputDevActionTablePtr[Input::MAX_DEVS]{};
 
 	constexpr KeyMapping() {}
 	void buildAll();

@@ -28,6 +28,7 @@
 #include <imagine/util/fd-utils.h>
 #include <imagine/util/bits.h>
 #include <imagine/util/assume.h>
+#include <imagine/util/algorithm.h>
 #include "../common/windowPrivate.hh"
 #include "../common/basePrivate.hh"
 #include "android.hh"
@@ -38,6 +39,7 @@ namespace Base
 
 JavaVM* jVM{};
 static JNIEnv* jEnv_{};
+static JavaInstMethod<void()> jRecycle{};
 
 // activity
 jclass jBaseActivityCls{};
@@ -66,6 +68,15 @@ static bool unloadNativeLibOnDestroy = false;
 JavaInstMethod<void(jint, jint)> jSetWinFlags{};
 JavaInstMethod<void(jint)> jSetWinFormat{};
 JavaInstMethod<jint()> jWinFormat{}, jWinFlags{};
+
+void recycleBitmap(JNIEnv *env, jobject bitmap)
+{
+	if(unlikely(!jRecycle))
+	{
+		jRecycle.setup(env, env->GetObjectClass(bitmap), "recycle", "()V");
+	}
+	jRecycle(env, bitmap);
+}
 
 uint appActivityState() { return appState; }
 
@@ -113,7 +124,55 @@ FS::PathString storagePath()
 	return path;
 }
 
+FS::PathString libPath()
+{
+	auto env = jEnv();
+	JavaInstMethod<jobject()> libDir{env, jBaseActivityCls, "libDir", "()Ljava/lang/String;"};
+	auto libDirStr = (jstring)libDir(env, jBaseActivity);
+	FS::PathString path{};
+	javaStringCopy(env, path, libDirStr);
+	return path;
+}
+
+FS::PathString mainSOPath()
+{
+	auto env = jEnv();
+	JavaInstMethod<jobject()> soPath{env, jBaseActivityCls, "mainSOPath", "()Ljava/lang/String;"};
+	auto soPathStr = (jstring)soPath(env, jBaseActivity);
+	FS::PathString path{};
+	javaStringCopy(env, path, soPathStr);
+	return path;
+}
+
 bool documentsPathIsShared() { return false; }
+
+static jstring permissionToJString(JNIEnv *env, Permission p)
+{
+	switch(p)
+	{
+		case Permission::WRITE_EXT_STORAGE: return env->NewStringUTF("android.permission.WRITE_EXTERNAL_STORAGE");
+		default: return nullptr;
+	}
+}
+
+bool usesPermission(Permission p)
+{
+	if(Base::androidSDK() < 23)
+		return false;
+	return true;
+}
+
+bool requestPermission(Permission p)
+{
+	if(Base::androidSDK() < 23)
+		return false;
+	auto env = jEnv();
+	auto permissionJStr = permissionToJString(env, p);
+	if(!permissionJStr)
+		return false;
+	JavaInstMethod<jboolean(jobject)> requestPermission{env, jBaseActivityCls, "requestPermission", "(Ljava/lang/String;)Z"};
+	return requestPermission(env, jBaseActivity, permissionJStr);
+}
 
 AAssetManager *activityAAssetManager()
 {
@@ -187,11 +246,11 @@ static void activityInit(JNIEnv* env, jobject activity)
 					([](JNIEnv* env, jobject thiz, jlong windowAddr, jint x, jint y, jint x2, jint y2, jint winWidth, jint winHeight)
 					{
 						auto win = windowAddr ? (Window*)windowAddr : deviceWindow();
-						androidWindowContentRectChanged(*win, {x, y, x2, y2}, {winWidth, winHeight});
+						win->setContentRect({x, y, x2, y2}, {winWidth, winHeight});
 					})
 				}
 			};
-			env->RegisterNatives(jBaseActivityCls, method, sizeofArray(method));
+			env->RegisterNatives(jBaseActivityCls, method, IG::size(method));
 		}
 
 		if(Config::DEBUG_BUILD)
@@ -200,7 +259,7 @@ static void activityInit(JNIEnv* env, jobject activity)
 			logMsg("external storage path: %s", storagePath().data());
 		}
 
-		doOrAbort(logger_init());
+		logger_init();
 		engineInit();
 		logMsg("SDK API Level: %d", aSDK);
 
@@ -233,16 +292,13 @@ static void activityInit(JNIEnv* env, jobject activity)
 
 		if(unloadNativeLibOnDestroy)
 		{
-			JavaInstMethod<jobject()> jNativeLibPath{env, jBaseActivityCls, "nativeLibPath", "()Ljava/lang/String;"};
-			auto jstr = (jstring)jNativeLibPath(env, activity);
-			auto utfChars = env->GetStringUTFChars(jstr, nullptr);
+			auto soPath = mainSOPath();
 			#if __ANDROID_API__ >= 21
-			mainLibHandle = dlopen(utfChars, RTLD_LAZY | RTLD_NOLOAD);
+			mainLibHandle = dlopen(soPath.data(), RTLD_LAZY | RTLD_NOLOAD);
 			#else
-			mainLibHandle = dlopen(utfChars, RTLD_LAZY);
+			mainLibHandle = dlopen(soPath.data(), RTLD_LAZY);
 			dlclose(mainLibHandle);
 			#endif
-			env->ReleaseStringUTFChars(jstr, utfChars);
 			if(!mainLibHandle)
 				logWarn("unable to get native lib handle");
 		}
@@ -296,7 +352,7 @@ void endIdleByUserActivity()
 				{
 					jSetWinFlags(env, jBaseActivity, 0, AWINDOW_FLAG_KEEP_SCREEN_ON);
 				}
-			}, 20);
+			}, 20, {});
 	}
 }
 
@@ -366,34 +422,57 @@ static void setNativeActivityCallbacks(ANativeActivity* activity)
 				::exit(0);
 			}
 		};
-	//activity->callbacks->onStart = nullptr; // unused
+	activity->callbacks->onStart =
+		[](ANativeActivity *activity)
+		{
+			logMsg("app started");
+			appState = APP_RUNNING;
+			Screen::setActiveAll(true);
+			dispatchOnResume(aHasFocus);
+			handleIntent(activity->env, activity->clazz);
+		};
 	activity->callbacks->onResume =
 		[](ANativeActivity *activity)
 		{
 			logMsg("app resumed");
 			appState = APP_RUNNING;
-			Screen::setActiveAll(true);
 			#ifdef CONFIG_INPUT_ANDROID_MOGA
 			Input::onResumeMOGA(jEnv(), true);
 			#endif
-			dispatchOnResume(aHasFocus);
-			handleIntent(activity->env, activity->clazz);
 		};
 	//activity->callbacks->onSaveInstanceState = nullptr; // unused
 	activity->callbacks->onPause =
 		[](ANativeActivity *activity)
 		{
-			if(appIsRunning())
-				appState = APP_PAUSED;
-			logMsg("app %s", appState == APP_PAUSED ? "paused" : "exiting");
-			Screen::setActiveAll(false);
-			dispatchOnExit(appState == APP_PAUSED);
+			if(Base::androidSDK() < 11)
+			{
+				if(appIsRunning())
+					appState = APP_PAUSED;
+				logMsg("app %s", appState == APP_PAUSED ? "paused" : "exiting");
+				// App is killable in Android 2.3, run exit handler to save volatile data
+				dispatchOnExit(appState == APP_PAUSED);
+			}
+			else
+				logMsg("app paused");
 			#ifdef CONFIG_INPUT_ANDROID_MOGA
 			Input::onPauseMOGA(activity->env);
 			#endif
 			Input::deinitKeyRepeatTimer();
 		};
-	//activity->callbacks->onStop = nullptr; // unused
+	activity->callbacks->onStop =
+		[](ANativeActivity *activity)
+		{
+			if(Base::androidSDK() >= 11)
+			{
+				if(appIsRunning())
+					appState = APP_PAUSED;
+				logMsg("app %s", appState == APP_PAUSED ? "stopped" : "exiting");
+				dispatchOnExit(appState == APP_PAUSED);
+			}
+			else
+				logMsg("app stopped");
+			Screen::setActiveAll(false);
+		};
 	activity->callbacks->onConfigurationChanged =
 		[](ANativeActivity *activity)
 		{
@@ -441,8 +520,10 @@ static void setNativeActivityCallbacks(ANativeActivity* activity)
 				// Explicitly setting the format here seems to fix the problem (Android driver bug?).
 				// In case of a mismatch, the surface is usually destroyed & re-created by the OS after this callback.
 				if(Config::DEBUG_BUILD)
+				{
 					logMsg("setting window format to %d (current %d) after surface creation",
 						deviceWindow()->nativePixelFormat(), ANativeWindow_getFormat(nWin));
+				}
 				jSetWinFormat(activity->env, activity->clazz, deviceWindow()->nativePixelFormat());
 			}
 			deviceWindow()->setNativeWindow(nWin);
@@ -464,7 +545,7 @@ static void setNativeActivityCallbacks(ANativeActivity* activity)
 		{
 			inputQueue = queue;
 			logMsg("input queue created & attached");
-			AInputQueue_attachLooper(queue, activityLooper(), ALOOPER_POLL_CALLBACK,
+			AInputQueue_attachLooper(queue, EventLoop::forThread().nativeObject(), ALOOPER_POLL_CALLBACK,
 				[](int, int, void* data)
 				{
 					Input::processInput((AInputQueue*)data);
@@ -491,7 +572,6 @@ CLINK void LVISIBLE ANativeActivity_onCreate(ANativeActivity* activity, void* sa
 	if(Config::DEBUG_BUILD)
 		logMsg("called ANativeActivity_onCreate, thread ID %d", gettid());
 	aSDK = activity->sdkVersion;
-	initActivityLooper();
 	jVM = activity->vm;
 	assetManager = activity->assetManager;
 	jBaseActivity = activity->clazz;
@@ -499,11 +579,11 @@ CLINK void LVISIBLE ANativeActivity_onCreate(ANativeActivity* activity, void* sa
 	filesDir = activity->internalDataPath;
 	activityInit(jEnv_, activity->clazz);
 	setNativeActivityCallbacks(activity);
-	doOrAbort(Input::init());
+	Input::init();
 	aConfig = AConfiguration_new();
 	AConfiguration_fromAssetManager(aConfig, activity->assetManager);
 	initConfig(aConfig);
-	doOrAbort(onInit(0, nullptr));
+	onInit(0, nullptr);
 	if(!Window::windows())
 	{
 		bug_exit("didn't create a window");

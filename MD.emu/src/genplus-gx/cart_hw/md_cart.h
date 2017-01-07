@@ -37,7 +37,7 @@
 #define HW_LOCK_ON  0x08
 
 /* Cartridge extra hardware */
-typedef struct
+struct T_CART_HW
 {
   uint8 regs[4];                                            /* internal registers (R/W) */
   uint32 mask[4];                                           /* registers address mask */
@@ -48,17 +48,17 @@ typedef struct
   void (*time_w)(unsigned int address, unsigned int data);  /* !TIME signal ($a130xx) write handler */
   unsigned int (*regs_r)(unsigned int address);             /* cart hardware registers read handler  */
   void (*regs_w)(unsigned int address, unsigned int data);  /* cart hardware registers write handler */
-} T_CART_HW;
+};
 
 /* Cartridge type */
 typedef struct
 {
-  uint8 rom[MAXROMSIZE] __attribute__ ((aligned (8)));     /* ROM area */
-  uint8 *base;    /* ROM base (saved for OS/Cartridge ROM swap) */
-  uint32 romsize; /* ROM size */
-  uint32 mask;    /* ROM mask */
-  uint8 special;  /* Lock-On, J-Cart or SMS 3-D glasses hardware */
-  T_CART_HW hw;   /* Extra mapping hardware */
+  uint8 rom[MAXROMSIZE] __attribute__ ((aligned (8))){};     /* ROM area */
+  uint8 *base{};    /* ROM base (saved for OS/Cartridge ROM swap) */
+  uint32 romsize = 0; /* ROM size */
+  uint32 mask = 0;    /* ROM mask */
+  uint8 special = 0;  /* Lock-On, J-Cart or SMS 3-D glasses hardware */
+  T_CART_HW hw{};   /* Extra mapping hardware */
 } T_CART;
 
 /* global variables */

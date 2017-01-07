@@ -1,6 +1,21 @@
+/*  This file is part of NEO.emu.
+
+	MD.emu is free software: you can redistribute it and/or modify
+	it under the terms of the GNU General Public License as published by
+	the Free Software Foundation, either version 3 of the License, or
+	(at your option) any later version.
+
+	MD.emu is distributed in the hope that it will be useful,
+	but WITHOUT ANY WARRANTY; without even the implied warranty of
+	MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+	GNU General Public License for more details.
+
+	You should have received a copy of the GNU General Public License
+	along with MD.emu.  If not, see <http://www.gnu.org/licenses/> */
+
 #include <imagine/util/preprocessor/repeat.h>
 #include <emuframework/EmuInput.hh>
-#include "EmuConfig.hh"
+#include "internal.hh"
 
 namespace EmuControls
 {
@@ -263,7 +278,7 @@ const KeyConfig defaultKeyProfile[] =
 	#endif
 };
 
-const uint defaultKeyProfiles = sizeofArray(defaultKeyProfile);
+const uint defaultKeyProfiles = IG::size(defaultKeyProfile);
 
 #ifdef CONFIG_INPUT_APPLE_GAME_CONTROLLER
 
@@ -290,7 +305,7 @@ const KeyConfig defaultAppleGCProfile[] =
 	},
 };
 
-const uint defaultAppleGCProfiles = sizeofArray(defaultAppleGCProfile);
+const uint defaultAppleGCProfiles = IG::size(defaultAppleGCProfile);
 
 #endif
 
@@ -320,7 +335,7 @@ const KeyConfig defaultWiimoteProfile[] =
 	},
 };
 
-const uint defaultWiimoteProfiles = sizeofArray(defaultWiimoteProfile);
+const uint defaultWiimoteProfiles = IG::size(defaultWiimoteProfile);
 
 const KeyConfig defaultWiiCCProfile[] =
 {
@@ -346,7 +361,7 @@ const KeyConfig defaultWiiCCProfile[] =
 	},
 };
 
-const uint defaultWiiCCProfiles = sizeofArray(defaultWiiCCProfile);
+const uint defaultWiiCCProfiles = IG::size(defaultWiiCCProfile);
 
 // iControlPad
 
@@ -374,7 +389,7 @@ const KeyConfig defaultIControlPadProfile[] =
 	},
 };
 
-const uint defaultIControlPadProfiles = sizeofArray(defaultIControlPadProfile);
+const uint defaultIControlPadProfiles = IG::size(defaultIControlPadProfile);
 
 // iCade
 
@@ -402,7 +417,7 @@ const KeyConfig defaultICadeProfile[] =
 	},
 };
 
-const uint defaultICadeProfiles = sizeofArray(defaultICadeProfile);
+const uint defaultICadeProfiles = IG::size(defaultICadeProfile);
 
 // Zeemote
 
@@ -428,7 +443,7 @@ const KeyConfig defaultZeemoteProfile[] =
 	},
 };
 
-const uint defaultZeemoteProfiles = sizeofArray(defaultZeemoteProfile);
+const uint defaultZeemoteProfiles = IG::size(defaultZeemoteProfile);
 
 // PS3
 
@@ -456,6 +471,6 @@ const KeyConfig defaultPS3Profile[] =
 	},
 };
 
-const uint defaultPS3Profiles = sizeofArray(defaultPS3Profile);
+const uint defaultPS3Profiles = IG::size(defaultPS3Profile);
 
 };

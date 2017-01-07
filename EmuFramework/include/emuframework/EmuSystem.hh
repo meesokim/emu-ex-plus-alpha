@@ -22,12 +22,22 @@
 #include <imagine/base/Screen.hh>
 #include <imagine/time/Time.hh>
 #include <imagine/input/Input.hh>
+#include <imagine/gui/View.hh>
+#include <imagine/gui/NavView.hh>
 #include <imagine/util/audio/PcmFormat.hh>
-#include <imagine/util/Rational.hh>
+#include <imagine/util/string.h>
+#include <system_error>
+
+#ifdef ENV_NOTE
+#define PLATFORM_INFO_STR ENV_NOTE " (" CONFIG_ARCH_STR ")"
+#else
+#define PLATFORM_INFO_STR "(" CONFIG_ARCH_STR ")"
+#endif
+#define CREDITS_INFO_STRING "Built : " __DATE__ "\n" PLATFORM_INFO_STR "\n\n"
 
 struct AspectRatioInfo
 {
-	constexpr AspectRatioInfo(const char *name, int n, int d): name(name), aspect{Rational::make<uint>(n, d)} {}
+	constexpr AspectRatioInfo(const char *name, uint n, uint d): name(name), aspect{n, d} {}
 	const char *name;
 	IG::Point2D<uint> aspect;
 };
@@ -40,7 +50,7 @@ struct BundledGameInfo
 	const char *assetName;
 };
 
-class EmuNavView;
+using EmuNavView = BasicNavView;
 
 enum { STATE_RESULT_OK, STATE_RESULT_NO_FILE, STATE_RESULT_NO_FILE_ACCESS, STATE_RESULT_IO_ERROR,
 	STATE_RESULT_INVALID_DATA, STATE_RESULT_OTHER_ERROR };
@@ -54,7 +64,25 @@ private:
 	static FS::PathString gameSavePath_;
 
 public:
-	enum class State { OFF, STARTING, PAUSED, ACTIVE };
+	enum class State
+	{
+		OFF,
+		STARTING,
+		PAUSED,
+		ACTIVE
+	};
+	enum class ViewID
+	{
+		MAIN_MENU,
+		VIDEO_OPTIONS,
+		AUDIO_OPTIONS,
+		INPUT_OPTIONS,
+		SYSTEM_OPTIONS,
+		GUI_OPTIONS,
+		EDIT_CHEATS,
+		LIST_CHEATS,
+	};
+	using NameFilterFunc = bool(*)(const char *name);
 	static State state;
 	static FS::PathString savePath_;
 	static Base::Timer autoSaveStateTimer;
@@ -77,6 +105,7 @@ public:
 	static const bool inputHasTriggerBtns;
 	static const bool inputHasRevBtnLayout;
 	static bool inputHasKeyboard;
+	static bool inputHasOptionsView;
 	static bool hasBundledGames;
 	static bool hasPALVideoSystem;
 	enum VideoSystem { VIDSYS_NATIVE_NTSC, VIDSYS_PAL };
@@ -86,17 +115,22 @@ public:
 	enum ResetMode { RESET_HARD, RESET_SOFT };
 	static bool handlesArchiveFiles;
 	static bool handlesGenericIO;
+	static bool hasCheats;
+	static NameFilterFunc defaultFsFilter;
+	static NameFilterFunc defaultBenchmarkFsFilter;
+	static const char *creditsViewStr;
 
 	static CallResult onInit();
 	static void onMainWindowCreated(Base::Window &win);
 	static void onCustomizeNavView(EmuNavView &view);
+	static View *makeView(Base::Window &win, ViewID id);
 	static bool isActive() { return state == State::ACTIVE; }
 	static bool isStarted() { return state == State::ACTIVE || state == State::PAUSED; }
 	static bool isPaused() { return state == State::PAUSED; }
 	static void cancelAutoSaveStateTimer();
 	static void startAutoSaveStateTimer();
-	static int loadState(int slot = saveStateSlot);
-	static int saveState();
+	static std::system_error loadState(int slot = saveStateSlot);
+	static std::error_code saveState();
 	static bool stateExists(int slot);
 	static bool shouldOverwriteExistingState();
 	static const char *systemName();
@@ -125,6 +159,7 @@ public:
 	static int loadGameFromIO(IO &io, const char *path, const char *origFilename);
 	static FS::PathString willLoadGameFromPath(FS::PathString path);
 	static int loadGameFromPath(FS::PathString path);
+	static int loadGameFromFile(GenericIO io, const char *origFilename);
 	typedef DelegateFunc<void (uint result, Input::Event e)> LoadGameCompleteDelegate;
 	static LoadGameCompleteDelegate loadGameCompleteDel;
 	static LoadGameCompleteDelegate &onLoadGameComplete() { return loadGameCompleteDel; }
@@ -148,11 +183,10 @@ public:
 		bool turbo;
 		return translateInputAction(input, turbo);
 	}
-	static bool hasInputOptions();
+	static bool touchControlsApplicable();
 	static void stopSound();
 	static void startSound();
 	static void writeSound(const void *samples, uint framesToWrite);
-	static void commitSound(Audio::BufferContext buffer, uint frames);
 	static uint advanceFramesWithTime(Base::FrameTimeBase time);
 	static void setupGamePaths(const char *filePath);
 	static void setGameSavePath(const char *path);
@@ -170,18 +204,6 @@ public:
 	static void closeSystem();
 	static void closeGame(bool allowAutosaveState = 1);
 };
-
-static const char *stateResultToStr(int res)
-{
-	switch(res)
-	{
-		case STATE_RESULT_NO_FILE: return "No State Exists";
-		case STATE_RESULT_NO_FILE_ACCESS: return "File Permission Denied";
-		case STATE_RESULT_IO_ERROR: return "File I/O Error";
-		case STATE_RESULT_INVALID_DATA: return "Invalid State Data";
-		default: bug_branch("%d", res); return 0;
-	}
-}
 
 static const char *stateNameStr(int slot)
 {

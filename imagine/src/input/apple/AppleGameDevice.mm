@@ -19,6 +19,7 @@
 #include <imagine/logger/logger.h>
 #include "../private.hh"
 #include <imagine/util/coreFoundation.h>
+#include <imagine/util/string.h>
 #import <GameController/GameController.h>
 
 namespace Input
@@ -238,13 +239,13 @@ static uint findFreeDevId()
 	uint id[5]{};
 	for(auto e : gcList)
 	{
-		if(e->enumId() < sizeofArray(id))
+		if(e->enumId() < IG::size(id))
 			id[e->enumId()] = 1;
 	}
-	forEachInArray(id, e)
+	for(const auto &e : id)
 	{
-		if(*e == 0)
-			return e_i;
+		if(e == 0)
+			return &e - id;
 	}
 	logWarn("too many devices to enumerate");
 	return 0;

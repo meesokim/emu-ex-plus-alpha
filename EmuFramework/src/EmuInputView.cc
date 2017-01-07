@@ -21,11 +21,10 @@
 #include <emuframework/FilePicker.hh>
 
 extern bool touchControlsAreOn;
-bool touchControlsApplicable();
 
 void EmuInputView::draw()
 {
-	vController.draw(touchControlsAreOn && touchControlsApplicable(), ffKeyPushed || ffToggleActive);
+	vController.draw(touchControlsAreOn && EmuSystem::touchControlsApplicable(), ffKeyPushed || ffToggleActive);
 }
 
 void EmuInputView::place()
@@ -63,10 +62,10 @@ void EmuInputView::inputEvent(Input::Event e)
 		}
 		else if(e.state == Input::PUSHED && layoutPos[VCTRL_LAYOUT_FF_IDX].state != 0 && vController.ffBound.overlaps({e.x, e.y}))
 		{
-			toggle(ffToggleActive);
+			ffToggleActive ^= true;
 			updateFastforward();
 		}
-		else if((touchControlsAreOn && touchControlsApplicable())
+		else if((touchControlsAreOn && EmuSystem::touchControlsApplicable())
 			|| vController.isInKeyboardMode())
 		{
 			vController.applyInput(e);
@@ -134,10 +133,8 @@ void EmuInputView::inputEvent(Input::Event e)
 						logMsg("open load game menu from key event");
 						restoreMenuFromGame();
 						viewStack.popToRoot();
-						auto &fPicker = *new EmuFilePicker{window()};
-						fPicker.init(false);
-						viewStack.useNavView = 0;
-						viewStack.pushAndShow(fPicker, e);
+						auto &fPicker = *EmuFilePicker::makeForLoading(window());
+						viewStack.pushAndShow(fPicker, e, false);
 						return;
 					}
 
@@ -155,9 +152,9 @@ void EmuInputView::inputEvent(Input::Event e)
 						static auto doSaveState =
 							[]()
 							{
-								int ret = EmuSystem::saveState();
-								if(ret != STATE_RESULT_OK)
-									popup.postError(stateResultToStr(ret));
+								auto ec = EmuSystem::saveState();
+								if(ec)
+									popup.post("Save State: ", ec);
 								else
 									popup.post("State Saved");
 							};
@@ -169,17 +166,19 @@ void EmuInputView::inputEvent(Input::Event e)
 						else
 						{
 							auto &ynAlertView = *new YesNoAlertView{window(), "Really Overwrite State?"};
-							ynAlertView.onYes() =
-								[](Input::Event e)
+							ynAlertView.setOnYes(
+								[](TextMenuItem &, View &view, Input::Event e)
 								{
+									view.dismiss();
 									doSaveState();
 									startGameFromMenu();
-								};
-							ynAlertView.onNo() =
-								[](Input::Event e)
+								});
+							ynAlertView.setOnNo(
+								[](TextMenuItem &, View &view, Input::Event e)
 								{
+									view.dismiss();
 									startGameFromMenu();
-								};
+								});
 							modalViewController.pushAndShow(ynAlertView, e);
 							restoreMenuFromGame();
 						}
@@ -189,10 +188,10 @@ void EmuInputView::inputEvent(Input::Event e)
 					bcase guiKeyIdxLoadState:
 					if(e.state == Input::PUSHED)
 					{
-						int ret = EmuSystem::loadState();
-						if(ret != STATE_RESULT_OK && ret != STATE_RESULT_OTHER_ERROR)
+						auto err = EmuSystem::loadState();
+						if(err.code())
 						{
-							popup.postError(stateResultToStr(ret));
+							popup.post("Load State: ", err);
 						}
 						return;
 					}
@@ -228,11 +227,11 @@ void EmuInputView::inputEvent(Input::Event e)
 					{
 						logMsg("request exit from key event");
 						auto &ynAlertView = *new YesNoAlertView{window(), "Really Exit?"};
-						ynAlertView.onYes() =
-							[](Input::Event e)
+						ynAlertView.setOnYes(
+							[](TextMenuItem &, View &view, Input::Event e)
 							{
 								Base::exit();
-							};
+							});
 						modalViewController.pushAndShow(ynAlertView, e);
 						restoreMenuFromGame();
 						return;

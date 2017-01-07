@@ -15,16 +15,14 @@
 	You should have received a copy of the GNU General Public License
 	along with Imagine.  If not, see <http://www.gnu.org/licenses/> */
 
-#include <imagine/engine-globals.h>
+#include <imagine/config/defs.hh>
 #include <imagine/gfx/Gfx.hh>
-
-#if defined(CONFIG_RESOURCE_FACE)
 
 #include <float.h>
 #include "GfxSprite.hh"
 #include <imagine/util/2DOrigin.h>
-#include <imagine/util/basicString.h>
-#include <imagine/resource/face/ResourceFace.hh>
+#include <imagine/util/string.h>
+#include <imagine/gfx/GlyphTextureSet.hh>
 
 namespace Gfx
 {
@@ -41,7 +39,7 @@ public:
 		uint chars;
 	};
 
-	ResourceFace *face{};
+	GlyphTextureSet *face{};
 	GC spaceSize = 0;
 	GC nominalHeight = 0;
 	GC yLineStart = 0;
@@ -54,34 +52,12 @@ public:
 	LineInfo *lineInfo{};
 
 	constexpr Text() {}
-	constexpr Text(const char *str): str(str) {}
-
-	void init(const char *str)
-	{
-		setString(str);
-	}
-
-	void init(const char *str, ResourceFace *face)
-	{
-		setString(str);
-		setFace(face);
-	}
-
-	void init(ResourceFace *face)
-	{
-		setFace(face);
-	}
-
-	void initCompiled(const char *str, ResourceFace *face, const ProjectionPlane &projP)
-	{
-		init(str, face);
-		compile(projP);
-	}
-	void deinit();
+	constexpr Text(const char *str): str{str} {}
+	constexpr Text(const char *str, GlyphTextureSet *face): face{face}, str{str} {}
+	~Text();
 	void setString(const char *str);
-	void setFace(ResourceFace *face);
+	void setFace(GlyphTextureSet *face);
 	void compile(const ProjectionPlane &projP);
-
 	void draw(GC xPos, GC yPos, _2DOrigin o, const ProjectionPlane &projP) const;
 	void draw(GP p, _2DOrigin o, const ProjectionPlane &projP) const
 	{
@@ -90,5 +66,3 @@ public:
 };
 
 }
-
-#endif

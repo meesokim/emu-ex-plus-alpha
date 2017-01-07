@@ -7,11 +7,16 @@
 #include <imagine/thread/Thread.hh>
 #include <imagine/fs/FS.hh>
 #include <imagine/io/FileIO.hh>
-#include <imagine/util/strings.h>
+#include <imagine/util/string.h>
+#include <condition_variable>
 
-struct MDFN_Thread {};
-struct MDFN_Mutex : public IG::Mutex {};
-struct MDFN_Cond : public IG::ConditionVar {};
+struct MDFN_Thread : public IG::thread
+{
+	using IG::thread::thread;
+};
+
+struct MDFN_Mutex : public std::mutex {};
+struct MDFN_Cond : public std::condition_variable {};
 
 int get_line(IO &file, std::string &str)
 {
@@ -19,7 +24,7 @@ int get_line(IO &file, std::string &str)
 
  str.clear();	// or str.resize(0)??
 
- while(file.readAll(&c, sizeof(c)) == OK)
+ while(!file.readAll(&c, sizeof(c)))
  {
   if(c == '\r' || c == '\n' || c == 0)
    return(c);
@@ -71,19 +76,18 @@ void MDFN_ResetMessages(void) { }
 
 MDFN_Thread *MDFND_CreateThread(void* (*fn)(void *), void *data)
 {
-	IG::runOnThread(
+	return new MDFN_Thread
+	{
 		[fn, data]()
 		{
 			fn(data);
-		});
-
-	// Note: thread object does not hold any data
-	return new MDFN_Thread();
+		}
+	};
 }
 
 void MDFND_WaitThread(MDFN_Thread *thread, int *status)
 {
-	// Note: all threads run detached and should be able to clean-up themselves
+	thread->join();
 	delete thread;
 }
 
@@ -133,7 +137,10 @@ int MDFND_SignalCond(MDFN_Cond* cond)
 
 int MDFND_WaitCond(MDFN_Cond* cond, MDFN_Mutex* mutex)
 {
-	cond->wait(*mutex);
+	//logMsg("waiting %p on mutex %p", cond, mutex);
+	std::unique_lock<std::mutex> lock{*mutex, std::adopt_lock};
+	cond->wait(lock);
+	lock.release();
 	return 0;
 }
 

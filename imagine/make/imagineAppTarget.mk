@@ -4,13 +4,17 @@ include $(buildSysPath)/evalPkgConfigCFlags.mk
 include $(buildSysPath)/evalPkgConfigLibs.mk
 
 ifeq ($(ENV), android)
- target := lib$(android_soName).so
- LDFLAGS += $(LDFLAGS_SO)
+ ifndef android_metadata_soName
+  $(error android_metadata_soName not defined)
+ endif
+ target := lib$(android_metadata_soName).so
 endif
 
-ifdef O_LTO
- LDFLAGS += $(CFLAGS_CODEGEN)
+ifdef STDCXXINC
+ CPPFLAGS += $(STDCXXINC)
 endif
+
+LDFLAGS += $(STDCXXLIB)
 
 targetFile := $(target)$(targetSuffix)$(targetExtension)
 
@@ -25,7 +29,7 @@ linkerLibsDep := $(linkerLibsDep:-lgcc=)
 $(targetDir)/$(targetFile) : $(OBJ) $(linkerLibsDep)
 	@echo "Linking $@"
 	@mkdir -p `dirname $@`
-	$(PRINT_CMD) $(LD) -o $@ $(OBJ) $(LDFLAGS) $(STDCXXLIB)
+	$(PRINT_CMD) $(LD) -o $@ $(linkAction) $(OBJ) $(LDFLAGS)
 ifeq ($(ENV), ios)
  ifndef iOSNoCodesign
 	@echo "Signing $@"

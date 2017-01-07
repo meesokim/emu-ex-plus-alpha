@@ -16,8 +16,8 @@
 #include <imagine/gui/View.hh>
 #include <imagine/logger/logger.h>
 
-ResourceFace *View::defaultFace{};
-ResourceFace *View::defaultSmallFace{};
+Gfx::GlyphTextureSet View::defaultFace{};
+Gfx::GlyphTextureSet View::defaultBoldFace{};
 bool View::needsBackControl = needsBackControlDefault;
 
 void View::pushAndShow(View &v, Input::Event e, bool needsNavView)
@@ -63,7 +63,7 @@ bool View::compileGfxPrograms()
 void View::setViewRect(IG::WindowRect rect, Gfx::ProjectionPlane projP)
 {
 	this->viewRect() = rect;
-	var_selfs(projP);
+	this->projP = projP;
 }
 
 void View::postDraw()
@@ -105,4 +105,9 @@ void View::setController(ViewController *c, Input::Event e)
 	{
 		onAddedToController(e);
 	}
+}
+
+bool View::pointIsInView(IG::WP pos)
+{
+	return viewRect().overlaps(pos);
 }

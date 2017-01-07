@@ -21,7 +21,9 @@
 #include <imagine/fs/ArchiveFS.hh>
 #include <imagine/audio/Audio.hh>
 #include <imagine/util/assume.h>
+#include <imagine/util/math/int.hh>
 #include <algorithm>
+#include <string>
 
 EmuSystem::State EmuSystem::state = EmuSystem::State::OFF;
 FS::PathString EmuSystem::gamePath_{};
@@ -41,6 +43,7 @@ uint EmuSystem::audioFramesPerVideoFrame = 0;
 EmuSystem::LoadGameCompleteDelegate EmuSystem::loadGameCompleteDel;
 Base::Timer EmuSystem::autoSaveStateTimer;
 [[gnu::weak]] bool EmuSystem::inputHasKeyboard = false;
+[[gnu::weak]] bool EmuSystem::inputHasOptionsView = false;
 [[gnu::weak]] bool EmuSystem::hasBundledGames = false;
 [[gnu::weak]] bool EmuSystem::hasPALVideoSystem = false;
 double EmuSystem::frameTimeNative = 1./60.;
@@ -48,6 +51,7 @@ double EmuSystem::frameTimePAL = 1./50.;
 [[gnu::weak]] bool EmuSystem::hasResetModes = false;
 [[gnu::weak]] bool EmuSystem::handlesArchiveFiles = false;
 [[gnu::weak]] bool EmuSystem::handlesGenericIO = true;
+[[gnu::weak]] bool EmuSystem::hasCheats = false;
 
 void saveAutoStateFromTimer();
 
@@ -66,7 +70,7 @@ void EmuSystem::startAutoSaveStateTimer()
 			{
 				logMsg("auto-save state timer fired");
 				EmuSystem::saveAutoState();
-			}, secs, secs);
+			}, secs, secs, {});
 	}
 }
 
@@ -108,16 +112,6 @@ void EmuSystem::writeSound(const void *samples, uint framesToWrite)
 	}
 }
 
-void EmuSystem::commitSound(Audio::BufferContext buffer, uint frames)
-{
-	Audio::commitPlayBuffer(buffer, frames);
-	if(!Audio::isPlaying() && Audio::framesFree() <= (int)audioFramesPerVideoFrame)
-	{
-		logMsg("starting audio playback with %d frames free in buffer", Audio::framesFree());
-		Audio::resumePcm();
-	}
-}
-
 bool EmuSystem::stateExists(int slot)
 {
 	auto saveStr = sprintStateFilename(slot);
@@ -128,7 +122,8 @@ bool EmuSystem::loadAutoState()
 {
 	if(optionAutoSaveState)
 	{
-		if(loadState(-1))
+		auto err = loadState(-1);
+		if(!err.code())
 		{
 			logMsg("loaded autosave-state");
 			return 1;
@@ -226,7 +221,8 @@ static bool hasWriteAccessToDir(const char *path)
 	{
 		auto testFilePath = FS::makePathStringPrintf("%s/.safe-to-delete-me", path);
 		FileIO testFile;
-		if(testFile.create(testFilePath.data()) != OK)
+		auto ec = testFile.create(testFilePath.data());
+		if(ec)
 		{
 			hasAccess = false;
 		}
@@ -329,7 +325,7 @@ void EmuSystem::closeGame(bool allowAutosaveState)
 		closeSystem();
 		clearGamePaths();
 		cancelAutoSaveStateTimer();
-		viewNav.setRightBtnActive(0);
+		viewStack.navView()->showRightBtn(false);
 		state = State::OFF;
 	}
 }
@@ -448,48 +444,80 @@ int EmuSystem::loadGameFromPath(FS::PathString path)
 	path = willLoadGameFromPath(path);
 	if(!handlesGenericIO)
 	{
-		return loadGame(path.data());
+		auto res = loadGame(path.data());
+		if(res == 0)
+		{
+			clearGamePaths();
+		}
+		return res;
 	}
 	logMsg("load from path:%s", path.data());
-	if(hasArchiveExtension(path.data()))
+	FileIO io{};
+	auto ec = io.open(path);
+	if(ec)
+	{
+		popup.printf(3, true, "Error opening file: %s", ec.message().c_str());
+		return 0;
+	}
+	return loadGameFromFile(GenericIO{std::move(io)}, path.data());
+}
+
+int EmuSystem::loadGameFromFile(GenericIO file, const char *name)
+{
+	int res;
+	if(hasArchiveExtension(name))
 	{
 		ArchiveIO io{};
-		CallResult res = OK;
-		for(auto &entry : FS::ArchiveIterator{path, res})
+		std::error_code ec{};
+		for(auto &entry : FS::ArchiveIterator{std::move(file), ec})
 		{
 			if(entry.type() == FS::file_type::directory)
 			{
 				continue;
 			}
 			auto name = entry.name();
-			logMsg("archive file entry:%s", entry.name());
-			if(EmuFilePicker::defaultFsFilter(name))
+			logMsg("archive file entry:%s", name);
+			if(EmuSystem::defaultFsFilter(name))
 			{
 				io = entry.moveIO();
 				break;
 			}
 		}
-		if(res != OK)
+		if(ec)
 		{
-			logErr("error opening archive:%s", path.data());
+			popup.printf(3, true, "Error opening archive: %s", ec.message().c_str());
 			return 0;
 		}
 		if(!io)
 		{
-			logErr("no recognized file extensions in archive:%s", path.data());
+			popup.postError("No recognized file extensions in archive");
 			return 0;
 		}
-		return EmuSystem::loadGameFromIO(io, path.data(), io.name());
+		res = EmuSystem::loadGameFromIO(io, name, io.name());
 	}
 	else
 	{
-		FileIO io{};
-		io.open(path);
-		if(!io)
-		{
-			logErr("error opening file:%s", path.data());
-			return 0;
-		}
-		return EmuSystem::loadGameFromIO(io, path.data(), path.data());
+		res = EmuSystem::loadGameFromIO(file, name, name);
 	}
+	if(res == 0)
+	{
+		clearGamePaths();
+	}
+	return res;
 }
+
+[[gnu::weak]] void EmuSystem::initOptions() {}
+
+[[gnu::weak]] void EmuSystem::onOptionsLoaded() {}
+
+[[gnu::weak]] void EmuSystem::saveBackupMem() {}
+
+[[gnu::weak]] void EmuSystem::savePathChanged() {}
+
+[[gnu::weak]] uint EmuSystem::multiresVideoBaseX() { return 0; }
+
+[[gnu::weak]] uint EmuSystem::multiresVideoBaseY() { return 0; }
+
+[[gnu::weak]] bool EmuSystem::vidSysIsPAL() { return false; }
+
+[[gnu::weak]] bool EmuSystem::touchControlsApplicable() { return true; }

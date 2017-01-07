@@ -41,12 +41,12 @@ BufferMapIO::operator GenericIO()
 	return GenericIO{*this};
 }
 
-CallResult BufferMapIO::open(const void *buff, size_t size, OnCloseDelegate onClose)
+std::error_code BufferMapIO::open(const void *buff, size_t size, OnCloseDelegate onClose)
 {
 	close();
 	setData(buff, size);
-	var_selfs(onClose);
-	return OK;
+	this->onClose = onClose;
+	return {};
 }
 
 void BufferMapIO::close()

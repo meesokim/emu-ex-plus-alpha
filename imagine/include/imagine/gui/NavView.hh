@@ -15,8 +15,9 @@
 
 #pragma once
 
+#include <cstddef>
 #include <memory>
-#include <imagine/engine-globals.h>
+#include <imagine/config/defs.hh>
 #include <imagine/gfx/GfxText.hh>
 #include <imagine/gfx/GeomRect.hh>
 #include <imagine/gfx/GfxLGradient.hh>
@@ -27,34 +28,40 @@
 class NavView
 {
 public:
-	IG::WindowRect leftBtn{}, rightBtn{}, textRect{};
-	Gfx::Text text{};
-	IG::WindowRect viewRect{};
-	bool hasBackBtn = false, leftBtnActive = false, hasCloseBtn = false, rightBtnActive = false;
+	using OnPushDelegate = DelegateFunc<void (Input::Event e)>;
 
-	constexpr NavView() {}
-	virtual void onLeftNavBtn(Input::Event e) {};
-	virtual void onRightNavBtn(Input::Event e) {};
-	void setLeftBtnActive(bool on) { leftBtnActive = on; }
-	void setRightBtnActive(bool on) { rightBtnActive = on; }
+	NavView(Gfx::GlyphTextureSet *face);
+	virtual ~NavView() {}
+	void setOnPushLeftBtn(OnPushDelegate del);
+	void setOnPushRightBtn(OnPushDelegate del);
+	void setOnPushMiddleBtn(OnPushDelegate del);
 	void setTitle(const char *title) { text.setString(title); }
-	void init(ResourceFace *face);
-	virtual void deinit() = 0;
-	void deinitText();
 	virtual void place(const Gfx::ProjectionPlane &projP);
 	void inputEvent(Input::Event e);
 	virtual void draw(const Base::Window &win, const Gfx::ProjectionPlane &projP) = 0;
+	virtual void showLeftBtn(bool show) = 0;
+	virtual void showRightBtn(bool show) = 0;
+	IG::WindowRect &viewRect();
+	Gfx::GlyphTextureSet *titleFace();
+
+protected:
+	IG::WindowRect leftBtn{}, rightBtn{}, textRect{};
+	Gfx::Text text{};
+	IG::WindowRect viewRect_{};
+	OnPushDelegate onPushLeftBtn_{};
+	OnPushDelegate onPushRightBtn_{};
+	OnPushDelegate onPushMiddleBtn_{};
+	bool hasBackBtn = false;
+	bool hasCloseBtn = false;
 };
 
 class BasicNavView : public NavView
 {
 public:
-	Gfx::Sprite leftSpr{}, rightSpr{};
-	Gfx::LGradient bg{};
-	std::unique_ptr<Gfx::LGradientStopDesc[]> gradientStops{};
+	bool centerTitle = true;
+	bool rotateLeftBtn = false;
 
-	BasicNavView() {}
-	void init(ResourceFace *face, Gfx::PixmapTexture *leftRes, Gfx::PixmapTexture *rightRes);
+	BasicNavView(Gfx::GlyphTextureSet *face, Gfx::PixmapTexture *leftRes, Gfx::PixmapTexture *rightRes);
 	void setBackImage(Gfx::PixmapTexture *img);
 	void setBackgroundGradient(const Gfx::LGradientStopDesc *gradStop, uint gradStops);
 
@@ -66,5 +73,11 @@ public:
 
 	void draw(const Base::Window &win, const Gfx::ProjectionPlane &projP) override;
 	void place(const Gfx::ProjectionPlane &projP) override;
-	void deinit() override;
+	void showLeftBtn(bool show) override;
+	void showRightBtn(bool show) override;
+
+protected:
+	Gfx::Sprite leftSpr{}, rightSpr{};
+	Gfx::LGradient bg{};
+	std::unique_ptr<Gfx::LGradientStopDesc[]> gradientStops{};
 };

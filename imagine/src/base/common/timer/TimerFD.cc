@@ -15,19 +15,14 @@
 
 #define LOGTAG "TimerFD"
 #include <unistd.h>
+#include <errno.h>
+#include <cstring>
 #include <imagine/base/Timer.hh>
-#include <imagine/base/EventLoopFileSource.hh>
+#include <imagine/base/EventLoop.hh>
 #include <imagine/logger/logger.h>
-// TODO: can use __has_include in GCC 5 to simplify
-#if defined __ANDROID__
-#include "../../android/android.hh"
-	#if __ANDROID_API__ >= 21
-	#define HAS_TIMERFD_H
-	#endif
-#else
-#define HAS_TIMERFD_H
-#endif
-#ifdef HAS_TIMERFD_H
+#include <imagine/util/utility.h>
+
+#if __has_include(<sys/timerfd.h>)
 #include <sys/timerfd.h>
 #else
 #include <time.h>
@@ -49,7 +44,7 @@ static int timerfd_settime(int ufd, int flags,
 namespace Base
 {
 
-bool TimerFD::arm(timespec time, timespec repeatInterval, bool shouldReuseResources)
+bool TimerFD::arm(timespec time, timespec repeatInterval, EventLoop loop, bool shouldReuseResources)
 {
 	reuseResources = shouldReuseResources;
 	bool rearm = false;
@@ -61,24 +56,15 @@ bool TimerFD::arm(timespec time, timespec repeatInterval, bool shouldReuseResour
 			logErr("error creating timerfd");
 			return false;
 		}
+		if(!loop)
+			loop = EventLoop::forThread();
 		//logMsg("created timerfd: %d", fd);
-		#if defined __ANDROID__
-		auto ret = ALooper_addFd(Base::activityLooper(), fd, ALOOPER_POLL_CALLBACK, Base::POLLEV_IN,
-			[](int fd, int events, void* data)
-			{
-				auto &inst = *((TimerFD*)data);
-				inst.timerFired();
-				return 1;
-			}, this);
-		assert(ret == 1);
-		#else
-		fdSrc.init(fd,
+		fdSrc = {fd, loop,
 			[this](int fd, int events)
 			{
 				timerFired();
 				return 1;
-			});
-		#endif
+			}};
 	}
 	else
 	{
@@ -93,7 +79,7 @@ bool TimerFD::arm(timespec time, timespec repeatInterval, bool shouldReuseResour
 	{
 		repeating = true;
 	}
-	struct itimerspec newTime { repeatInterval, time };
+	struct itimerspec newTime{repeatInterval, time};
 	if(timerfd_settime(fd, 0, &newTime, nullptr) != 0)
 	{
 		logErr("error in timerfd_settime: %s", strerror(errno));
@@ -108,11 +94,7 @@ void TimerFD::deinit()
 	if(fd >= 0)
 	{
 		logMsg("closing fd:%d", fd);
-		#if defined __ANDROID__
-		ALooper_removeFd(Base::activityLooper(), fd);
-		#else
-		fdSrc.deinit();
-		#endif
+		fdSrc.removeFromEventLoop();
 		close(fd);
 		fd = -1;
 		armed = false;
@@ -144,56 +126,56 @@ void TimerFD::timerFired()
 	}
 }
 
-void Timer::callbackAfterNSec(CallbackDelegate callback, int ns, int repeatNs, Flags flags)
+void Timer::callbackAfterNSec(CallbackDelegate callback, int ns, int repeatNs, EventLoop loop, Flags flags)
 {
-	var_selfs(callback);
+	this->callback = callback;
 	int seconds = ns / 1000000000;
 	long leftoverNs = ns % 1000000000;
 	int repeatSeconds = repeatNs / 1000000000;
 	long repeatLeftoverNs = repeatNs % 1000000000;
-	if(!arm({seconds, leftoverNs}, {repeatSeconds, repeatLeftoverNs}, flags & HINT_REUSE))
+	if(!arm({seconds, leftoverNs}, {repeatSeconds, repeatLeftoverNs}, loop, flags & HINT_REUSE))
 	{
 		bug_exit("failed to setup timer, OS resources may be low or bad parameters present");
 	}
 }
 
-void Timer::callbackAfterMSec(CallbackDelegate callback, int ms, int repeatMs, Flags flags)
+void Timer::callbackAfterMSec(CallbackDelegate callback, int ms, int repeatMs, EventLoop loop, Flags flags)
 {
-	var_selfs(callback);
+	this->callback = callback;
 	int seconds = ms / 1000;
 	int leftoverMs = ms % 1000;
 	long leftoverNs = leftoverMs * 1000000;
 	int repeatSeconds = repeatMs / 1000;
 	int repeatLeftoverMs = repeatMs % 1000;
 	long repeatLeftoverNs = repeatLeftoverMs * 1000000;
-	if(!arm({seconds, leftoverNs}, {repeatSeconds, repeatLeftoverNs}, flags & HINT_REUSE))
+	if(!arm({seconds, leftoverNs}, {repeatSeconds, repeatLeftoverNs}, loop, flags & HINT_REUSE))
 	{
 		bug_exit("failed to setup timer, OS resources may be low or bad parameters present");
 	}
 }
 
-void Timer::callbackAfterSec(CallbackDelegate callback, int s, int repeatS, Flags flags)
+void Timer::callbackAfterSec(CallbackDelegate callback, int s, int repeatS, EventLoop loop, Flags flags)
 {
-	var_selfs(callback);
-	if(!arm({s, 0}, {repeatS, 0}, flags & HINT_REUSE))
+	this->callback = callback;
+	if(!arm({s, 0}, {repeatS, 0}, loop, flags & HINT_REUSE))
 	{
 		bug_exit("failed to setup timer, OS resources may be low or bad parameters present");
 	}
 }
 
-void Timer::callbackAfterNSec(CallbackDelegate callback, int ns)
+void Timer::callbackAfterNSec(CallbackDelegate callback, int ns, EventLoop loop)
 {
-	callbackAfterNSec(callback, ns, 0, HINT_NONE);
+	callbackAfterNSec(callback, ns, 0, loop, HINT_NONE);
 }
 
-void Timer::callbackAfterMSec(CallbackDelegate callback, int ms)
+void Timer::callbackAfterMSec(CallbackDelegate callback, int ms, EventLoop loop)
 {
-	callbackAfterMSec(callback, ms, 0, HINT_NONE);
+	callbackAfterMSec(callback, ms, 0, loop, HINT_NONE);
 }
 
-void Timer::callbackAfterSec(CallbackDelegate callback, int s)
+void Timer::callbackAfterSec(CallbackDelegate callback, int s, EventLoop loop)
 {
-	callbackAfterSec(callback, s, 0, HINT_NONE);
+	callbackAfterSec(callback, s, 0, loop, HINT_NONE);
 }
 
 void Timer::cancel()

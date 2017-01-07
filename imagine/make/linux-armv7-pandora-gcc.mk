@@ -31,7 +31,7 @@ CFLAGS_WARN += -Wdouble-promotion
 CXXFLAGS_LANG += -Wno-literal-suffix
 
 CFLAGS_CODEGEN += -march=armv7-a -mcpu=cortex-a8 -mfpu=neon -mfloat-abi=softfp
-LDFLAGS += -march=armv7-a -mcpu=cortex-a8 -mfpu=neon -mfloat-abi=softfp
+LDFLAGS_SYSTEM += -march=armv7-a -mcpu=cortex-a8 -mfpu=neon -mfloat-abi=softfp
 
 pandoraSDKSysroot := $(PNDSDK)/usr
 PKG_CONFIG_PATH := $(PKG_CONFIG_PATH):$(pandoraSDKSysroot)/lib/pkgconfig
@@ -46,10 +46,7 @@ CPPFLAGS += -I$(pandoraSDKSysroot)/include \
 # link librt to avoid pulling in GLIBC 2.17+ clock functions
 LDLIBS += -L$(pandoraSDKSysroot)/lib -Wl,-rpath-link=$(pandoraSDKSysroot)/lib -lrt
 
-linuxEventLoop := epoll
-x11GLWinSystem := egl
-
-ifdef O_LTO
+ifneq ($(ltoMode),off)
  # -flto-partition=none seems to help .symver issues
- LDFLAGS += -flto-partition=none
+ LDFLAGS_SYSTEM += -flto-partition=none
 endif

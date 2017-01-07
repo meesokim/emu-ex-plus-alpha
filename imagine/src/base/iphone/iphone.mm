@@ -16,17 +16,16 @@
 static_assert(__has_feature(objc_arc), "This file requires ARC");
 #define LOGTAG "Base"
 #import "MainApp.hh"
-#import <imagine/base/iphone/EAGLView.hh>
 #import <dlfcn.h>
 #import <unistd.h>
-#import <OpenGLES/ES2/gl.h> // for glFinish()
 #include <imagine/base/Base.hh>
-#include <imagine/base/GLContext.hh>
 #include <imagine/logger/logger.h>
+#include <imagine/util/algorithm.h>
 #include "private.hh"
 #include <imagine/fs/FS.hh>
 #include <imagine/time/Time.hh>
 #include <imagine/util/coreFoundation.h>
+#include <imagine/util/string.h>
 #include "../common/basePrivate.hh"
 #include "../common/windowPrivate.hh"
 #include "../common/screenPrivate.hh"
@@ -135,7 +134,7 @@ static Screen &setupUIScreen(UIScreen *screen, bool setOverscanCompensation)
 	using namespace Input;
 	logMsg("editing ended");
 	//inVKeyboard = 0;
-	auto delegate = moveAndClear(vKeyboardTextDelegate);
+	auto delegate = IG::moveAndClear(vKeyboardTextDelegate);
 	char text[256];
 	string_copy(text, [textField.text UTF8String]);
 	[textField removeFromSuperview];
@@ -204,7 +203,7 @@ static uint iOSOrientationToGfx(UIDeviceOrientation orientation)
 		isIPad = 1;
 		logMsg("running on iPad");
 	}
-	doOrAbort(Input::init());	
+	Input::init();
 	if(hasAtLeastIOS7())
 	{
 		#if __IPHONE_OS_VERSION_MAX_ALLOWED >= 70000
@@ -293,7 +292,7 @@ static uint iOSOrientationToGfx(UIDeviceOrientation orientation)
 	[mainScreen().displayLink() addToRunLoop:[NSRunLoop currentRunLoop] forMode:NSDefaultRunLoopMode];
 	#endif
 	// TODO: use NSProcessInfo
-	doOrAbort(onInit(0, nullptr));
+	onInit(0, nullptr);
 	if(!deviceWindow())
 		bug_exit("no main window created");
 	logMsg("exiting didFinishLaunchingWithOptions");
@@ -338,13 +337,6 @@ static uint iOSOrientationToGfx(UIDeviceOrientation orientation)
 	dispatchOnExit(true);
 	Base::Screen::setActiveAll(false);
 	Input::deinitKeyRepeatTimer();
-	iterateTimes(Window::windows(), i)
-	{
-		[Window::window(i)->glView() deleteDrawable];
-	}
-	GLContext::setDrawable(nullptr);
-	onGLDrawableChanged.callCopySafe(nullptr);
-	glFinish();
 	logMsg("entered background");
 }
 
@@ -566,6 +558,11 @@ FS::PathString storagePath()
 		return documentsPath();
 }
 
+FS::PathString libPath()
+{
+	return appPath;
+}
+
 bool documentsPathIsShared()
 {
 	return isRunningAsSystemApp;
@@ -597,6 +594,28 @@ bool hasAtLeastIOS8()
 	return !Config::MACHINE_IS_GENERIC_ARMV6 &&
 			kCFCoreFoundationVersionNumber >= kCFCoreFoundationVersionNumber_iOS_8_0;
 }
+
+bool usesPermission(Permission p)
+{
+	return false;
+}
+
+bool requestPermission(Permission p)
+{
+	return false;
+}
+
+void registerInstance(const char *appID, int argc, char** argv) {}
+
+void setAcceptIPC(const char *appID, bool on) {}
+
+void addNotification(const char *onShow, const char *title, const char *message) {}
+
+void addLauncherIcon(const char *name, const char *path) {}
+
+bool hasVibrator() { return false; }
+
+void vibrate(uint ms) {}
 
 #ifdef CONFIG_BASE_IOS_SETUID
 
@@ -635,7 +654,7 @@ int main(int argc, char *argv[])
 	setupUID();
 	#endif
 	engineInit();
-	doOrAbort(logger_init());
+	logger_init();
 	appPath = FS::makeAppPathFromLaunchCommand(argv[0]);
 	
 	#ifdef CONFIG_BASE_IOS_SETUID

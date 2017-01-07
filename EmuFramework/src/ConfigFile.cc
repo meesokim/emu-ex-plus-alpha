@@ -13,7 +13,6 @@
 	You should have received a copy of the GNU General Public License
 	along with EmuFramework.  If not, see <http://www.gnu.org/licenses/> */
 
-#include <imagine/util/number.h>
 #include <emuframework/ConfigFile.hh>
 #include <emuframework/EmuInput.hh>
 #include <emuframework/EmuOptions.hh>
@@ -119,7 +118,6 @@ static bool readConfig2(IO &io)
 		return false;
 	}
 
-	bool dirChange = false;
 	while(!io.eof() && fileBytesLeft >= 2)
 	{
 		auto size = io.readVal<uint16>();
@@ -128,13 +126,13 @@ static bool readConfig2(IO &io)
 		if(!size)
 		{
 			logMsg("invalid 0 size block, skipping rest of config");
-			return dirChange;
+			return false;
 		}
 
 		if(size > fileBytesLeft)
 		{
 			logErr("size of key exceeds rest of file, skipping rest of config");
-			return dirChange;
+			return false;
 		}
 		fileBytesLeft -= size;
 
@@ -144,7 +142,7 @@ static bool readConfig2(IO &io)
 			if(io.seekC(size) == -1)
 			{
 				logErr("unable to seek to next block, skipping rest of config");
-				return dirChange;
+				return false;
 			}
 			continue;
 		}
@@ -194,20 +192,7 @@ static bool readConfig2(IO &io)
 			#if defined(CONFIG_BASE_ANDROID)
 			bcase CFGKEY_DITHER_IMAGE: optionDitherImage.readFromIO(io, size);
 			#endif
-			bcase CFGKEY_LAST_DIR:
-			{
-				char lastDir[size+1];
-				auto bytesRead = io.read(lastDir, size);
-				if(bytesRead > 0)
-				{
-					lastDir[bytesRead] = 0;
-					logMsg("switching to last dir %s", lastDir);
-					CallResult chdirRes = OK;
-					FS::current_path(lastDir, chdirRes);
-					if(chdirRes == OK)
-						dirChange = 1;
-				}
-			}
+			bcase CFGKEY_LAST_DIR: optionLastLoadPath.readFromIO(io, size);
 			bcase CFGKEY_FONT_Y_SIZE: optionFontSize.readFromIO(io, size);
 			bcase CFGKEY_GAME_ORIENTATION: optionGameOrientation.readFromIO(io, size);
 			bcase CFGKEY_MENU_ORIENTATION: optionMenuOrientation.readFromIO(io, size);
@@ -248,10 +233,11 @@ static bool readConfig2(IO &io)
 			bcase CFGKEY_REL_POINTER_DECEL: optionRelPointerDecel.readFromIO(io, size);
 			bcase CFGKEY_ANDROID_TEXTURE_STORAGE: optionAndroidTextureStorage.readFromIO(io, size);
 			bcase CFGKEY_PROCESS_PRIORITY: optionProcessPriority.readFromIO(io, size);
-			bcase CFGKEY_MANAGE_CPU_FREQ: optionManageCPUFreq.readFromIO(io, size);
+			bcase CFGKEY_FAKE_USER_ACTIVITY: optionFakeUserActivity.readFromIO(io, size);
 			#endif
 			#ifdef CONFIG_BLUETOOTH
 			bcase CFGKEY_KEEP_BLUETOOTH_ACTIVE: optionKeepBluetoothActive.readFromIO(io, size);
+			bcase CFGKEY_SHOW_BLUETOOTH_SCAN: optionShowBluetoothScan.readFromIO(io, size);
 				#ifdef CONFIG_BLUETOOTH_SCAN_CACHE_USAGE
 				bcase CFGKEY_BLUETOOTH_SCAN_CACHE: optionBlueToothScanCache.readFromIO(io, size);
 				#endif
@@ -262,7 +248,7 @@ static bool readConfig2(IO &io)
 			#ifdef EMU_FRAMEWORK_STRICT_UNDERRUN_CHECK_OPTION
 			bcase CFGKEY_SOUND_UNDERRUN_CHECK: optionSoundUnderrunCheck.readFromIO(io, size);
 			#endif
-			#ifdef CONFIG_AUDIO_SOLO_MIX
+			#ifdef CONFIG_AUDIO_MANAGER_SOLO_MIX
 			bcase CFGKEY_AUDIO_SOLO_MIX: optionAudioSoloMix.readFromIO(io, size);
 			#endif
 			bcase CFGKEY_SAVE_PATH: logMsg("reading save path"); optionSavePath.readFromIO(io, size);
@@ -408,10 +394,10 @@ static bool readConfig2(IO &io)
 		if(io.seekS(nextBlockPos) == -1)
 		{
 			logErr("unable to seek to next block, skipping rest of config");
-			return dirChange;
+			return false;
 		}
 	}
-	return dirChange;
+	return true;
 }
 
 static OptionBase *cfgFileOption[] =
@@ -490,10 +476,11 @@ static OptionBase *cfgFileOption[] =
 	&optionDitherImage,
 	&optionAndroidTextureStorage,
 	&optionProcessPriority,
-	&optionManageCPUFreq,
+	&optionFakeUserActivity,
 	#endif
 	#ifdef CONFIG_BLUETOOTH
 	&optionKeepBluetoothActive,
+	&optionShowBluetoothScan,
 		#ifdef CONFIG_BLUETOOTH_SCAN_CACHE_USAGE
 		&optionBlueToothScanCache,
 		#endif
@@ -504,7 +491,7 @@ static OptionBase *cfgFileOption[] =
 	#ifdef EMU_FRAMEWORK_STRICT_UNDERRUN_CHECK_OPTION
 	&optionSoundUnderrunCheck,
 	#endif
-	#ifdef CONFIG_AUDIO_SOLO_MIX
+	#ifdef CONFIG_AUDIO_MANAGER_SOLO_MIX
 	&optionAudioSoloMix,
 	#endif
 	#ifdef EMU_FRAMEWORK_WINDOW_PIXEL_FORMAT_OPTION
@@ -522,15 +509,15 @@ static void writeConfig2(IO &io)
 		return;
 	}
 
-	CallResult r = OK;
+	std::error_code ec{};
 	uint8 blockHeaderSize = 2;
-	io.writeVal(blockHeaderSize, &r);
+	io.writeVal(blockHeaderSize, &ec);
 
-	forEachDInArray(cfgFileOption, e)
+	for(auto &e : cfgFileOption)
 	{
 		if(!e->isDefault())
 		{
-			io.writeVal((uint16)e->ioSize(), &r);
+			io.writeVal((uint16)e->ioSize(), &ec);
 			e->writeToIO(io);
 		}
 	}
@@ -581,26 +568,26 @@ static void writeConfig2(IO &io)
 		}
 		// write to config file
 		logMsg("saving %d key configs, %d bytes", customKeyConfig.size(), bytes);
-		io.writeVal(uint16(bytes), &r);
-		io.writeVal((uint16)CFGKEY_INPUT_KEY_CONFIGS, &r);
-		io.writeVal((uint8)customKeyConfig.size(), &r);
+		io.writeVal(uint16(bytes), &ec);
+		io.writeVal((uint16)CFGKEY_INPUT_KEY_CONFIGS, &ec);
+		io.writeVal((uint8)customKeyConfig.size(), &ec);
 		configs = 0;
 		for(auto &e : customKeyConfig)
 		{
 			logMsg("writing config %s", e.name);
-			io.writeVal(uint8(e.map), &r);
+			io.writeVal(uint8(e.map), &ec);
 			uint8 nameLen = strlen(e.name);
-			io.writeVal(nameLen, &r);
-			io.write(e.name, nameLen, &r);
-			io.writeVal(writeCategories[configs], &r);
+			io.writeVal(nameLen, &ec);
+			io.write(e.name, nameLen, &ec);
+			io.writeVal(writeCategories[configs], &ec);
 			iterateTimes(EmuControls::categories, cat)
 			{
 				if(!writeCategory[configs][cat])
 					continue;
-				io.writeVal((uint8)cat, &r);
+				io.writeVal((uint8)cat, &ec);
 				uint16 catSize = EmuControls::category[cat].keys * sizeof(KeyConfig::Key);
-				io.writeVal(catSize, &r);
-				io.write(e.key(EmuControls::category[cat]), catSize, &r);
+				io.writeVal(catSize, &ec);
+				io.write(e.key(EmuControls::category[cat]), catSize, &ec);
 			}
 			configs++;
 		}
@@ -639,48 +626,35 @@ static void writeConfig2(IO &io)
 		}
 		// write to config file
 		logMsg("saving %d input device configs, %d bytes", savedInputDevList.size(), bytes);
-		io.writeVal((uint16)bytes, &r);
-		io.writeVal((uint16)CFGKEY_INPUT_DEVICE_CONFIGS, &r);
-		io.writeVal((uint8)savedInputDevList.size(), &r);
+		io.writeVal((uint16)bytes, &ec);
+		io.writeVal((uint16)CFGKEY_INPUT_DEVICE_CONFIGS, &ec);
+		io.writeVal((uint8)savedInputDevList.size(), &ec);
 		for(auto &e : savedInputDevList)
 		{
 			logMsg("writing config %s, id %d", e.name, e.enumId);
-			io.writeVal((uint8)e.enumId, &r);
-			io.writeVal((uint8)e.enabled, &r);
-			io.writeVal((uint8)e.player, &r);
-			io.writeVal((uint8)e.joystickAxisAsDpadBits, &r);
+			io.writeVal((uint8)e.enumId, &ec);
+			io.writeVal((uint8)e.enabled, &ec);
+			io.writeVal((uint8)e.player, &ec);
+			io.writeVal((uint8)e.joystickAxisAsDpadBits, &ec);
 			#ifdef CONFIG_INPUT_ICADE
-			io.writeVal((uint8)e.iCadeMode, &r);
+			io.writeVal((uint8)e.iCadeMode, &ec);
 			#endif
 			uint8 nameLen = strlen(e.name);
-			io.writeVal(nameLen, &r);
-			io.write(e.name, nameLen, &r);
+			io.writeVal(nameLen, &ec);
+			io.write(e.name, nameLen, &ec);
 			uint8 keyConfMap = e.keyConf ? e.keyConf->map : 0;
-			io.writeVal(keyConfMap, &r);
+			io.writeVal(keyConfMap, &ec);
 			if(keyConfMap)
 			{
 				logMsg("has key conf %s, map %d", e.keyConf->name, keyConfMap);
 				uint8 keyConfNameLen = strlen(e.keyConf->name);
-				io.writeVal(keyConfNameLen, &r);
-				io.write(e.keyConf->name, keyConfNameLen, &r);
+				io.writeVal(keyConfNameLen, &ec);
+				io.write(e.keyConf->name, keyConfNameLen, &ec);
 			}
 		}
 	}
 
-	auto workDir = FS::current_path();
-	uint len = strlen(workDir.data());
-	if(len > 32000)
-	{
-		logErr("option string too long to write");
-	}
-	else if(!string_equal(workDir.data(), Base::storagePath().data()))
-	{
-		logMsg("saving current directory: %s", workDir.data());
-		io.writeVal((uint16)(2 + len), &r);
-		io.writeVal((uint16)CFGKEY_LAST_DIR, &r);
-		io.write(workDir.data(), len, &r);
-	}
-
+	optionLastLoadPath.writeToIO(io);
 	optionSavePath.writeToIO(io);
 
 	EmuSystem::writeConfig(io);
@@ -694,14 +668,13 @@ void loadConfigFile()
 	else
 		string_printf(configFilePath, "%s/config", Base::documentsPath().data());
 	FileIO configFile;
-	if(configFile.open(configFilePath.data()) != OK)
+	auto ec = configFile.open(configFilePath.data());
+	if(ec)
 	{
 		logMsg("no config file");
+		return;
 	}
-	if(!configFile || !readConfig2(configFile))
-	{
-		FS::current_path(Base::storagePath());
-	}
+	readConfig2(configFile);
 }
 
 void saveConfigFile()

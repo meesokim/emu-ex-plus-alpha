@@ -21,7 +21,11 @@ ifeq ($(ENV), linux)
  endif
 endif
 
-SRC += main/Main.cc main/EmuControls.cc
+SRC += main/Main.cc \
+main/input.cc \
+main/options.cc \
+main/EmuMenuViews.cc \
+main/EmuControls.cc
 
 CPPFLAGS += -I$(projectPath)/src \
 -DHAVE_SYS_TIME_H=1 \

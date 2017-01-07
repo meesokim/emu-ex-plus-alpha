@@ -14,9 +14,9 @@
 	along with MD.emu.  If not, see <http://www.gnu.org/licenses/> */
 
 #define LOGTAG "main"
-#include <emuframework/EmuSystem.hh>
-#include <emuframework/EmuInput.hh>
-#include <emuframework/CommonFrameworkIncludes.hh>
+#include <emuframework/EmuApp.hh>
+#include <emuframework/EmuAppInlines.hh>
+#include "internal.hh"
 #include "system.h"
 #include "loadrom.h"
 #include "md_cart.h"
@@ -28,19 +28,24 @@
 #include "vdp_ctrl.h"
 #include "genesis.h"
 #include "genplus-config.h"
-#include "EmuConfig.hh"
 #ifndef NO_SCD
 #include <scd/scd.h>
 #endif
 #include <fileio/fileio.h>
-#include <main/Cheats.hh>
+#include "Cheats.hh"
 
-const char *creditsViewStr = CREDITS_INFO_STRING "(c) 2011-2014\nRobert Broglia\nwww.explusalpha.com\n\nPortions (c) the\nGenesis Plus Team\ncgfm2.emuviews.com";
+const char *EmuSystem::creditsViewStr = CREDITS_INFO_STRING "(c) 2011-2014\nRobert Broglia\nwww.explusalpha.com\n\nPortions (c) the\nGenesis Plus Team\ncgfm2.emuviews.com";
+bool EmuSystem::hasCheats = true;
+bool EmuSystem::hasPALVideoSystem = true;
 t_config config{};
 uint config_ym2413_enabled = 1;
-static int8 mdInputPortDev[2]{-1, -1};
+int8 mdInputPortDev[2]{-1, -1};
+static constexpr auto pixFmt = IG::PIXEL_FMT_RGB565;
+t_bitmap bitmap{};
+bool usingMultiTap = false;
+static uint autoDetectedVidSysPAL = 0;
 
-static bool hasMDExtension(const char *name)
+bool hasMDExtension(const char *name)
 {
 	return hasROMExtension(name);
 }
@@ -59,73 +64,6 @@ static bool hasMDWithCDExtension(const char *name)
 	;
 }
 
-// controls
-
-enum
-{
-	mdKeyIdxUp = EmuControls::systemKeyMapStart,
-	mdKeyIdxRight,
-	mdKeyIdxDown,
-	mdKeyIdxLeft,
-	mdKeyIdxLeftUp,
-	mdKeyIdxRightUp,
-	mdKeyIdxRightDown,
-	mdKeyIdxLeftDown,
-	mdKeyIdxMode,
-	mdKeyIdxStart,
-	mdKeyIdxA,
-	mdKeyIdxB,
-	mdKeyIdxC,
-	mdKeyIdxX,
-	mdKeyIdxY,
-	mdKeyIdxZ,
-	mdKeyIdxATurbo,
-	mdKeyIdxBTurbo,
-	mdKeyIdxCTurbo,
-	mdKeyIdxXTurbo,
-	mdKeyIdxYTurbo,
-	mdKeyIdxZTurbo
-};
-
-enum {
-	CFGKEY_BIG_ENDIAN_SRAM = 278, CFGKEY_SMS_FM = 279,
-	CFGKEY_6_BTN_PAD = 280, CFGKEY_MD_CD_BIOS_USA_PATH = 281,
-	CFGKEY_MD_CD_BIOS_JPN_PATH = 282, CFGKEY_MD_CD_BIOS_EUR_PATH = 283,
-	CFGKEY_MD_REGION = 284, CFGKEY_VIDEO_SYSTEM = 285,
-};
-
-static bool usingMultiTap = 0;
-static Byte1Option optionBigEndianSram(CFGKEY_BIG_ENDIAN_SRAM, 0);
-static Byte1Option optionSmsFM(CFGKEY_SMS_FM, 1);
-static Byte1Option option6BtnPad(CFGKEY_6_BTN_PAD, 0);
-static Byte1Option optionRegion(CFGKEY_MD_REGION, 0);
-#ifndef NO_SCD
-FS::PathString cdBiosUSAPath{}, cdBiosJpnPath{}, cdBiosEurPath{};
-static PathOption optionCDBiosUsaPath(CFGKEY_MD_CD_BIOS_USA_PATH, cdBiosUSAPath, "");
-static PathOption optionCDBiosJpnPath(CFGKEY_MD_CD_BIOS_JPN_PATH, cdBiosJpnPath, "");
-static PathOption optionCDBiosEurPath(CFGKEY_MD_CD_BIOS_EUR_PATH, cdBiosEurPath, "");
-#endif
-static Byte1Option optionVideoSystem(CFGKEY_VIDEO_SYSTEM, 0);
-static uint autoDetectedVidSysPAL = 0;
-
-const char *EmuSystem::inputFaceBtnName = "A/B/C";
-const char *EmuSystem::inputCenterBtnName = "Mode/Start";
-const uint EmuSystem::inputFaceBtns = 6;
-const uint EmuSystem::inputCenterBtns = 2;
-const bool EmuSystem::inputHasTriggerBtns = false;
-const bool EmuSystem::inputHasRevBtnLayout = true;
-const char *EmuSystem::configFilename = "MdEmu.config";
-const uint EmuSystem::maxPlayers = 4;
-const AspectRatioInfo EmuSystem::aspectRatioInfo[] =
-{
-		{"4:3 (Original)", 4, 3},
-		EMU_SYSTEM_DEFAULT_ASPECT_RATIO_INFO_INIT
-};
-const uint EmuSystem::aspectRatioInfos = sizeofArray(EmuSystem::aspectRatioInfo);
-bool EmuSystem::hasPALVideoSystem = true;
-#include <emuframework/CommonGui.hh>
-#include <emuframework/CommonCheatGui.hh>
-
 const char *EmuSystem::shortSystemName()
 {
 	return "MD-Genesis";
@@ -136,164 +74,14 @@ const char *EmuSystem::systemName()
 	return "Mega Drive (Sega Genesis)";
 }
 
-void EmuSystem::initOptions()
-{
-	#ifdef CONFIG_VCONTROLS_GAMEPAD
-	optionTouchCtrlSize.initDefault(750);
-	optionTouchCtrlBtnSpace.initDefault(100);
-	#endif
-}
-
-void EmuSystem::onOptionsLoaded()
-{
-	#ifdef CONFIG_VCONTROLS_GAMEPAD
-	vController.gp.activeFaceBtns = option6BtnPad ? 6 : 3;
-	#endif
-	config_ym2413_enabled = optionSmsFM;
-}
-
-bool EmuSystem::readConfig(IO &io, uint key, uint readSize)
-{
-	switch(key)
-	{
-		bcase CFGKEY_BIG_ENDIAN_SRAM: optionBigEndianSram.readFromIO(io, readSize);
-		bcase CFGKEY_SMS_FM: optionSmsFM.readFromIO(io, readSize);
-		bcase CFGKEY_6_BTN_PAD: option6BtnPad.readFromIO(io, readSize);
-		#ifndef NO_SCD
-		bcase CFGKEY_MD_CD_BIOS_USA_PATH: optionCDBiosUsaPath.readFromIO(io, readSize);
-		bcase CFGKEY_MD_CD_BIOS_JPN_PATH: optionCDBiosJpnPath.readFromIO(io, readSize);
-		bcase CFGKEY_MD_CD_BIOS_EUR_PATH: optionCDBiosEurPath.readFromIO(io, readSize);
-		#endif
-		bcase CFGKEY_MD_REGION:
-		{
-			optionRegion.readFromIO(io, readSize);
-			if(optionRegion < 4)
-			{
-				config.region_detect = optionRegion;
-			}
-			else
-				optionRegion = 0;
-		}
-		bcase CFGKEY_VIDEO_SYSTEM: optionVideoSystem.readFromIO(io, readSize);
-		bdefault: return 0;
-	}
-	return 1;
-}
-
-void EmuSystem::writeConfig(IO &io)
-{
-	optionBigEndianSram.writeWithKeyIfNotDefault(io);
-	optionSmsFM.writeWithKeyIfNotDefault(io);
-	option6BtnPad.writeWithKeyIfNotDefault(io);
-	optionVideoSystem.writeWithKeyIfNotDefault(io);
-	#ifndef NO_SCD
-	optionCDBiosUsaPath.writeToIO(io);
-	optionCDBiosJpnPath.writeToIO(io);
-	optionCDBiosEurPath.writeToIO(io);
-	#endif
-	optionRegion.writeWithKeyIfNotDefault(io);
-}
-
-EmuNameFilterFunc EmuFilePicker::defaultFsFilter = hasMDWithCDExtension;
-EmuNameFilterFunc EmuFilePicker::defaultBenchmarkFsFilter = hasMDExtension;
-
-static constexpr auto pixFmt = IG::PIXEL_FMT_RGB565;
-
-static const uint mdMaxResX = 320, mdMaxResY = 240;
-static int mdResX = 256, mdResY = 224;
-static uint16 nativePixBuff[mdMaxResX*mdMaxResY] __attribute__ ((aligned (8))) {0};
-t_bitmap bitmap = { (uint8*)nativePixBuff, mdResY, mdResX * (int)pixFmt.bytesPerPixel() };
-
-void updateVControllerMapping(uint player, SysVController::Map &map)
-{
-	uint playerMask = player << 30;
-	map[SysVController::F_ELEM] = INPUT_A | playerMask;
-	map[SysVController::F_ELEM+1] = INPUT_B | playerMask;
-	map[SysVController::F_ELEM+2] = INPUT_C | playerMask;
-	map[SysVController::F_ELEM+3] = INPUT_X | playerMask;
-	map[SysVController::F_ELEM+4] = INPUT_Y | playerMask;
-	map[SysVController::F_ELEM+5] = INPUT_Z | playerMask;
-
-	map[SysVController::C_ELEM] = INPUT_MODE | playerMask;
-	map[SysVController::C_ELEM+1] = INPUT_START | playerMask;
-
-	map[SysVController::D_ELEM] = INPUT_UP | INPUT_LEFT | playerMask;
-	map[SysVController::D_ELEM+1] = INPUT_UP | playerMask;
-	map[SysVController::D_ELEM+2] = INPUT_UP | INPUT_RIGHT | playerMask;
-	map[SysVController::D_ELEM+3] = INPUT_LEFT | playerMask;
-	map[SysVController::D_ELEM+5] = INPUT_RIGHT | playerMask;
-	map[SysVController::D_ELEM+6] = INPUT_DOWN | INPUT_LEFT | playerMask;
-	map[SysVController::D_ELEM+7] = INPUT_DOWN | playerMask;
-	map[SysVController::D_ELEM+8] = INPUT_DOWN | INPUT_RIGHT | playerMask;
-}
-
-uint EmuSystem::translateInputAction(uint input, bool &turbo)
-{
-	turbo = 0;
-	assert(input >= mdKeyIdxUp);
-	uint player = (input - mdKeyIdxUp) / EmuControls::gamepadKeys;
-	uint playerMask = player << 30;
-	input -= EmuControls::gamepadKeys * player;
-	switch(input)
-	{
-		case mdKeyIdxUp: return INPUT_UP | playerMask;
-		case mdKeyIdxRight: return INPUT_RIGHT | playerMask;
-		case mdKeyIdxDown: return INPUT_DOWN | playerMask;
-		case mdKeyIdxLeft: return INPUT_LEFT | playerMask;
-		case mdKeyIdxLeftUp: return INPUT_LEFT | INPUT_UP | playerMask;
-		case mdKeyIdxRightUp: return INPUT_RIGHT | INPUT_UP | playerMask;
-		case mdKeyIdxRightDown: return INPUT_RIGHT | INPUT_DOWN | playerMask;
-		case mdKeyIdxLeftDown: return INPUT_LEFT | INPUT_DOWN | playerMask;
-		case mdKeyIdxMode: return INPUT_MODE | playerMask;
-		case mdKeyIdxStart: return INPUT_START | playerMask;
-		case mdKeyIdxATurbo: turbo = 1;
-		case mdKeyIdxA: return INPUT_A | playerMask;
-		case mdKeyIdxBTurbo: turbo = 1;
-		case mdKeyIdxB: return INPUT_B | playerMask;
-		case mdKeyIdxCTurbo: turbo = 1;
-		case mdKeyIdxC: return INPUT_C | playerMask;
-		case mdKeyIdxXTurbo: turbo = 1;
-		case mdKeyIdxX: return INPUT_X | playerMask;
-		case mdKeyIdxYTurbo: turbo = 1;
-		case mdKeyIdxY: return INPUT_Y | playerMask;
-		case mdKeyIdxZTurbo: turbo = 1;
-		case mdKeyIdxZ: return INPUT_Z | playerMask;
-		default: bug_branch("%d", input);
-	}
-	return 0;
-}
-
-static uint playerIdxMap[4] = { 0 };
-
-void EmuSystem::handleInputAction(uint state, uint emuKey)
-{
-	uint player = emuKey >> 30; // player is encoded in upper 2 bits of input code
-	assert(player <= 4);
-	uint16 &padData = input.pad[playerIdxMap[player]];
-	if(state == Input::PUSHED)
-		setBits(padData, emuKey);
-	else
-		unsetBits(padData, emuKey);
-}
-
-void commitVideoFrame()
-{
-	if(unlikely(bitmap.viewport.w != mdResX || bitmap.viewport.h != mdResY))
-	{
-		mdResX = bitmap.viewport.w;
-		mdResY = bitmap.viewport.h;
-		bitmap.pitch = mdResX * pixFmt.bytesPerPixel();
-		logMsg("mode change: %dx%d", mdResX, mdResY);
-		emuVideo.resizeImage(mdResX, mdResY);
-	}
-	updateAndDrawEmuVideo();
-}
+EmuSystem::NameFilterFunc EmuSystem::defaultFsFilter = hasMDWithCDExtension;
+EmuSystem::NameFilterFunc EmuSystem::defaultBenchmarkFsFilter = hasMDExtension;
 
 void EmuSystem::runFrame(bool renderGfx, bool processGfx, bool renderAudio)
 {
 	//logMsg("frame start");
 	RAMCheatUpdate();
-	system_frame(!processGfx, renderGfx);
+	system_frame(!processGfx, renderGfx, emuVideo);
 
 	int16 audioBuff[snd.buffer_size * 2];
 	int frames = audio_update(audioBuff);
@@ -306,9 +94,6 @@ void EmuSystem::runFrame(bool renderGfx, bool processGfx, bool renderAudio)
 }
 
 bool EmuSystem::vidSysIsPAL() { return vdp_pal; }
-uint EmuSystem::multiresVideoBaseX() { return 0; }
-uint EmuSystem::multiresVideoBaseY() { return 0; }
-bool touchControlsApplicable() { return 1; }
 
 void EmuSystem::reset(ResetMode mode)
 {
@@ -348,59 +133,47 @@ static FS::PathString sprintBRAMSaveFilename()
 
 static const uint maxSaveStateSize = STATE_SIZE+4;
 
-static int saveMDState(const char *path)
+static std::error_code saveMDState(const char *path)
 {
-	uchar *stateData = (uchar*)malloc(maxSaveStateSize);
+	auto stateData = std::make_unique<uchar[]>(maxSaveStateSize);
 	if(!stateData)
-		return STATE_RESULT_IO_ERROR;
+		return {ENOMEM, std::system_category()};
 	logMsg("saving state data");
-	int size = state_save(stateData);
+	int size = state_save(stateData.get());
 	logMsg("writing to file");
-	CallResult ret;
-	if((ret = writeToNewFile(path, stateData, size)) != OK)
+	auto ec = writeToNewFile(path, stateData.get(), size);
+	if(ec)
 	{
-		free(stateData);
 		logMsg("error writing state file");
-		switch(ret)
-		{
-			case PERMISSION_DENIED: return STATE_RESULT_NO_FILE_ACCESS;
-			default: return STATE_RESULT_IO_ERROR;
-		}
+		return ec;
 	}
-	free(stateData);
 	logMsg("wrote %d byte state", size);
-	return STATE_RESULT_OK;
+	return {};
 }
 
-static int loadMDState(const char *path)
+static std::system_error loadMDState(const char *path)
 {
 	FileIO f;
-	auto ret = f.open(path);
-	if(ret != OK)
+	auto ec = f.open(path);
+	if(ec)
 	{
-		switch(ret)
-		{
-			case PERMISSION_DENIED: return STATE_RESULT_NO_FILE_ACCESS;
-			case NOT_FOUND: return STATE_RESULT_NO_FILE;
-			default: return STATE_RESULT_IO_ERROR;
-		}
+		return {ec};
 	}
-
 	auto stateData = (const uchar *)f.mmapConst();
 	if(!stateData)
 	{
-		return STATE_RESULT_IO_ERROR;
+		return {{EIO, std::system_category()}};
 	}
-	if(state_load(stateData) <= 0)
+	auto err = state_load(stateData);
+	if(err.code())
 	{
-		return STATE_RESULT_INVALID_DATA;
+		return err;
 	}
-
 	//sound_restore();
-	return STATE_RESULT_OK;
+	return {{}};
 }
 
-int EmuSystem::saveState()
+std::error_code EmuSystem::saveState()
 {
 	auto saveStr = sprintStateFilename(saveStateSlot);
 	fixFilePermissions(saveStr);
@@ -408,7 +181,7 @@ int EmuSystem::saveState()
 	return saveMDState(saveStr.data());
 }
 
-int EmuSystem::loadState(int saveStateSlot)
+std::system_error EmuSystem::loadState(int saveStateSlot)
 {
 	auto saveStr = sprintStateFilename(saveStateSlot);
 	logMsg("loading state %s", saveStr.data());
@@ -460,7 +233,8 @@ void EmuSystem::saveBackupMem() // for manually saving when not closing game
 			}
 			sramPtr = sramTemp;
 		}
-		if(writeToNewFile(saveStr.data(), sramPtr, 0x10000) == IO_ERROR)
+		auto ec = writeToNewFile(saveStr.data(), sramPtr, 0x10000);
+		if(ec)
 			logMsg("error creating sram file");
 	}
 	writeCheatFile();
@@ -514,7 +288,7 @@ static void setupSMSInput()
 	input.system[0] = input.system[1] =  SYSTEM_MS_GAMEPAD;
 }
 
-static void setupMDInput()
+void setupMDInput()
 {
 	if(!EmuSystem::gameIsRunning())
 	{
@@ -524,7 +298,7 @@ static void setupMDInput()
 		return;
 	}
 
-	mem_zero(playerIdxMap);
+	IG::fillData(playerIdxMap);
 	playerIdxMap[0] = 0;
 	playerIdxMap[1] = 4;
 
@@ -624,13 +398,13 @@ int EmuSystem::loadGame(const char *path)
 int EmuSystem::loadGameFromIO(IO &io, const char *path, const char *origFilename)
 {
 	closeGame();
-	emuVideo.initImage(0, mdResX, mdResY);
 	setupGamePaths(path);
 	#ifndef NO_SCD
 	CDAccess *cd{};
 	if(hasMDCDExtension(fullGamePath()) ||
 		(string_hasDotExtension(path, "bin") && FS::file_size(fullGamePath()) > 1024*1024*10)) // CD
 	{
+		FS::current_path(gamePath());
 		try
 		{
 			cd = cdaccess_open_image(fullGamePath(), false);
@@ -727,7 +501,7 @@ int EmuSystem::loadGameFromIO(IO &io, const char *path, const char *origFilename
 		if(!bramFile)
 		{
 			logMsg("no BRAM on disk, formatting");
-			mem_zero(bram);
+			IG::fillData(bram);
 			memcpy(bram + sizeof(bram) - sizeof(fmtBram), fmtBram, sizeof(fmtBram));
 			auto sramFormatStart = sram.sram + 0x10000 - sizeof(fmt64kSram);
 			memcpy(sramFormatStart, fmt64kSram, sizeof(fmt64kSram));
@@ -789,12 +563,6 @@ int EmuSystem::loadGameFromIO(IO &io, const char *path, const char *origFilename
 	return 1;
 }
 
-void EmuSystem::clearInputBuffers()
-{
-	mem_zero(input.pad);
-	mem_zero(input.analog);
-}
-
 void EmuSystem::configAudioRate(double frameTime)
 {
 	pcmFormat.rate = optionSoundRate;
@@ -803,10 +571,6 @@ void EmuSystem::configAudioRate(double frameTime)
 		sound_restore();
 	logMsg("md sound buffer size %d", snd.buffer_size);
 }
-
-void EmuSystem::savePathChanged() { }
-
-bool EmuSystem::hasInputOptions() { return true; }
 
 void EmuSystem::onCustomizeNavView(EmuNavView &view)
 {
@@ -844,7 +608,7 @@ void EmuSystem::onMainWindowCreated(Base::Window &win)
 					}
 					else if(e.state == Input::RELEASED)
 					{
-						unsetBits(input.pad[gunDevIdx], INPUT_A);
+						input.pad[gunDevIdx] = IG::clearBits(input.pad[gunDevIdx], (uint16)INPUT_A);
 					}
 				}
 			}
@@ -854,6 +618,6 @@ void EmuSystem::onMainWindowCreated(Base::Window &win)
 
 CallResult EmuSystem::onInit()
 {
-	emuVideo.initPixmap((char*)nativePixBuff, pixFmt, mdResX, mdResY);
+	emuVideo.initFormat(pixFmt);
 	return OK;
 }

@@ -19,6 +19,7 @@
 #include <imagine/data-type/image/sys.hh>
 #include <imagine/pixmap/Pixmap.hh>
 #include <imagine/io/FileIO.hh>
+#include <imagine/mem/mem.h>
 
 #ifdef CONFIG_DATA_TYPE_IMAGE_QUARTZ2D
 
@@ -196,7 +197,7 @@ bool writeScreenshot(const IG::Pixmap &vidPix, const char *fname)
 
 #endif
 
-int sprintScreenshotFilename(FS::PathString str)
+int sprintScreenshotFilename(FS::PathString &str)
 {
 	const uint maxNum = 999;
 	int num = -1;

@@ -18,14 +18,17 @@
 #include "internal.hh"
 #include "xlibutils.h"
 #include "xdnd.hh"
+#include <imagine/logger/logger.h>
 #include <imagine/base/GLContext.hh>
+#include <imagine/util/algorithm.h>
+#include <imagine/util/string.h>
 
 namespace Base
 {
 
 PixelFormat Window::defaultPixelFormat()
 {
-	return PIXEL_FMT_RGB888;
+	return PIXEL_FMT_RGBA8888;
 }
 
 void Window::setAcceptDnd(bool on)
@@ -160,12 +163,12 @@ static IG::WindowRect makeWindowRectWithConfig(const WindowConfig &config, ::Win
 	return winRect;
 }
 
-CallResult Window::init(const WindowConfig &config)
+std::error_code Window::init(const WindowConfig &config)
 {
 	if(xWin != None)
 	{
 		// already init
-		return OK;
+		return {};
 	}
 	if(!Config::BASE_MULTI_WINDOW && windows())
 	{
@@ -191,10 +194,10 @@ CallResult Window::init(const WindowConfig &config)
 	#else
 	pos = {winRect.x, winRect.y};
 	{
-		colormap = XCreateColormap(dpy, rootWindow, config.glConfig().visual, AllocNone);
+		colormap = XCreateColormap(dpy, rootWindow, config.format().visual, AllocNone);
 		attr.colormap = colormap;
 		xWin = XCreateWindow(dpy, rootWindow, 0, 0, w, h, 0,
-			config.glConfig().depth, InputOutput, config.glConfig().visual,
+			config.format().depth, InputOutput, config.format().visual,
 			CWColormap | CWEventMask, &attr);
 	}
 	#endif
@@ -202,19 +205,8 @@ CallResult Window::init(const WindowConfig &config)
 	{
 		logErr("error initializing window");
 		deinit();
-		return INVALID_PARAMETER;
+		return {EINVAL, std::system_category()};
 	}
-	#ifdef CONFIG_BASE_X11_EGL
-	//logMsg("setting up EGL window surface");
-	surface = eglCreateWindowSurface(GLContext::eglDisplay(), config.glConfig().glConfig,
-		Config::MACHINE_IS_PANDORA ? (EGLNativeWindowType)0 : (EGLNativeWindowType)xWin, nullptr);
-	if(surface == EGL_NO_SURFACE)
-	{
-		logErr("error creating window surface: 0x%X", (int)eglGetError());
-		deinit();
-		return INVALID_PARAMETER;
-	}
-	#endif
 	logMsg("created window with XID %d, drawable depth %d", (int)xWin, xDrawableDepth(dpy, xWin));
 	Input::initPerWindowData(xWin);
 	if(Config::MACHINE_IS_PANDORA)
@@ -243,18 +235,11 @@ CallResult Window::init(const WindowConfig &config)
 	mainWin = this;
 	#endif
 
-	return OK;
+	return {};
 }
 
 void Window::deinit()
 {
-	#ifdef CONFIG_BASE_X11_EGL
-	if(surface != EGL_NO_SURFACE)
-	{
-		eglDestroySurface(GLContext::eglDisplay(), surface);
-		surface = EGL_NO_SURFACE;
-	}
-	#endif
 	if(xWin != None)
 	{
 		logMsg("destroying window with ID %d", (int)xWin);
@@ -274,8 +259,8 @@ void deinitWindowSystem()
 {
 	logMsg("shutting down window system");
 	deinitFrameTimer();
-	GLContext::current().deinit();
-	GLContext::setCurrent({}, nullptr);
+	GLContext::current({dpy}).deinit({dpy});
+	GLContext::setCurrent({dpy}, {}, {});
 	iterateTimes(Window::windows(), i)
 	{
 		Window::window(i)->deinit();
@@ -297,6 +282,11 @@ void Window::show()
 bool Window::systemAnimatesRotation()
 {
 	return false;
+}
+
+NativeWindow Window::nativeObject()
+{
+	return xWin;
 }
 
 }

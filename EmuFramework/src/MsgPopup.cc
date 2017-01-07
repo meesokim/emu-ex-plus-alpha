@@ -17,13 +17,14 @@
 #include <emuframework/MsgPopup.hh>
 #include <emuframework/EmuApp.hh>
 #include <imagine/gui/View.hh>
+#include <string>
 
 using namespace Base;
 
 void MsgPopup::init()
 {
 	//logMsg("init MsgPopup");
-	text.init(View::defaultFace);
+	text = {nullptr, &View::defaultFace};
 	text.setString(str.data());
 	text.maxLines = 6;
 }
@@ -39,7 +40,7 @@ void MsgPopup::clear()
 
 void MsgPopup::place(const Gfx::ProjectionPlane &projP)
 {
-	var_selfs(projP)
+	this->projP = projP;
 	text.maxLineSize = projP.w;
 	if(strlen(str.data()))
 		text.compile(projP);
@@ -59,7 +60,7 @@ void MsgPopup::postContent(int secs, bool error)
 	logMsg("%s", str.data());
 	text.compile(projP);
 	this->error = error;
-	unpostTimer.callbackAfterSec([this](){unpost();}, secs);
+	unpostTimer.callbackAfterSec([this](){unpost();}, secs, {});
 }
 
 void MsgPopup::post(const char *msg, int secs, bool error)
@@ -70,7 +71,17 @@ void MsgPopup::post(const char *msg, int secs, bool error)
 
 void MsgPopup::postError(const char *msg, int secs)
 {
-	post(msg, secs, 1);
+	post(msg, secs, true);
+}
+
+void MsgPopup::post(const char *prefix, const std::system_error &err, int secs)
+{
+	printf(secs, true, "%s%s", prefix, err.what());
+}
+
+void MsgPopup::post(const char *prefix, std::error_code ec, int secs)
+{
+	printf(secs, true, "%s%s", prefix, ec.message().c_str());
 }
 
 void MsgPopup::printf(uint secs, bool error, const char *format, ...)

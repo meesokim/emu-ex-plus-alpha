@@ -18,6 +18,7 @@
 #include <imagine/gfx/Texture.hh>
 #include <imagine/util/ScopeGuard.hh>
 #include <imagine/util/assume.h>
+#include <imagine/mem/mem.h>
 #include "private.hh"
 #ifdef __ANDROID__
 #include "../../base/android/android.hh"
@@ -275,9 +276,9 @@ static LockedTextureBuffer makeLockedTextureBuffer(IG::Pixmap pix, IG::WindowRec
 static GLuint getTexturePBO()
 {
 	assert(texturePBO[texturePBOIdx]);
-	usedTexturePBOs = std::min(usedTexturePBOs + 1, (uint)sizeofArray(texturePBO));
+	usedTexturePBOs = std::min(usedTexturePBOs + 1, (uint)IG::size(texturePBO));
 	auto pbo = texturePBO[texturePBOIdx];
-	texturePBOIdx = (texturePBOIdx+1) % sizeofArray(texturePBO);
+	texturePBOIdx = (texturePBOIdx+1) % IG::size(texturePBO);
 	return pbo;
 }
 
@@ -285,7 +286,7 @@ void initTexturePBO()
 {
 	if(unlikely(usePBO && !texturePBO[0]))
 	{
-		glGenBuffers(sizeofArray(texturePBO), texturePBO);
+		glGenBuffers(IG::size(texturePBO), texturePBO);
 	}
 }
 
@@ -516,12 +517,12 @@ void GLTextureSampler::setTexParams(GLenum target)
 
 DirectTextureStorage::~DirectTextureStorage() {}
 
-IG::Pixmap &LockedTextureBuffer::pixmap()
+IG::Pixmap LockedTextureBuffer::pixmap() const
 {
 	return pix;
 }
 
-IG::WindowRect LockedTextureBuffer::sourceDirtyRect()
+IG::WindowRect LockedTextureBuffer::sourceDirtyRect() const
 {
 	return srcDirtyRect;
 }
@@ -533,9 +534,9 @@ LockedTextureBuffer::operator bool() const
 
 void GLLockedTextureBuffer::set(IG::Pixmap pix, IG::WindowRect srcDirtyRect, uint lockedLevel)
 {
-	var_selfs(pix);
-	var_selfs(srcDirtyRect);
-	var_selfs(lockedLevel);
+	this->pix = pix;
+	this->srcDirtyRect = srcDirtyRect;
+	this->lockedLevel = lockedLevel;
 }
 
 CallResult Texture::init(TextureConfig config)
@@ -784,7 +785,6 @@ void Texture::write(uint level, const IG::Pixmap &pixmap, IG::WP destPos, uint a
 	}
 	else
 	{
-		glcBindTexture(GL_TEXTURE_2D, texName_);
 		if((ptrsize)pixmap.pixel({}) % (ptrsize)assumeAlign != 0)
 		{
 			bug_exit("expected data from address %p to be aligned to %u bytes", pixmap.pixel({}), assumeAlign);
@@ -803,6 +803,7 @@ void Texture::write(uint level, const IG::Pixmap &pixmap, IG::WP destPos, uint a
 		}
 		else if(useUnpackRowLength || !pixmap.isPadded())
 		{
+			glcBindTexture(GL_TEXTURE_2D, texName_);
 			glcPixelStorei(GL_UNPACK_ALIGNMENT, assumeAlign);
 			if(useUnpackRowLength)
 				glcPixelStorei(GL_UNPACK_ROW_LENGTH, pixmap.pitchPixels());
@@ -824,8 +825,9 @@ void Texture::write(uint level, const IG::Pixmap &pixmap, IG::WP destPos, uint a
 				prevPixmapY = pixmap.h();
 				logDMsg("non-optimal texture write operation with %ux%u pixmap", pixmap.w(), pixmap.h());
 			}
-			alignas(8) char tempPixData[pixmap.pixelBytes()];
+			alignas(__BIGGEST_ALIGNMENT__) char tempPixData[pixmap.pixelBytes()];
 			IG::Pixmap tempPix{pixmap, tempPixData};
+			glcBindTexture(GL_TEXTURE_2D, texName_);
 			glcPixelStorei(GL_UNPACK_ALIGNMENT, unpackAlignForAddrAndPitch(nullptr, tempPix.pitchBytes()));
 			tempPix.write(pixmap, {});
 			handleGLErrors();
@@ -930,6 +932,7 @@ void Texture::unlock(LockedTextureBuffer lockBuff)
 		IG::WP destPos = {lockBuff.sourceDirtyRect().x, lockBuff.sourceDirtyRect().y};
 		//logDMsg("unmapped PBO");
 		glUnmapBuffer(GL_PIXEL_UNPACK_BUFFER);
+		glcBindTexture(GL_TEXTURE_2D, texName_);
 		glcPixelStorei(GL_UNPACK_ALIGNMENT, unpackAlignForAddrAndPitch(nullptr, pix.pitchBytes()));
 		glcPixelStorei(GL_UNPACK_ROW_LENGTH, 0);
 		GLenum format = makeGLFormat(pix.format());
@@ -986,7 +989,7 @@ bool Texture::compileDefaultProgram(uint mode)
 	}
 }
 
-void Texture::useDefaultProgram(uint mode, const Mat4 *modelMat)
+void Texture::useDefaultProgram(uint mode, const Mat4 *modelMat) const
 {
 	#ifndef CONFIG_GFX_OPENGL_SHADER_PIPELINE
 	const uint type_ = TEX_2D_4;
@@ -1168,10 +1171,10 @@ bool GLTexture::setAndroidStorageImpl(AndroidStorageImpl impl)
 				logMsg("not using GraphicBuffer due to app lockup on Tegra 4 and older");
 				return false;
 			}
-			if(GraphicBufferStorage::isRendererWhitelisted(rendererStr))
+			if(GraphicBufferStorage::testPassed)
 			{
 				androidStorageImpl_ = ANDROID_GRAPHIC_BUFFER;
-				logMsg("using Android GraphicBuffers as texture storage (white-listed)");
+				logMsg("using Android GraphicBuffer as texture storage (skipping test)");
 				return true;
 			}
 			else
@@ -1182,7 +1185,12 @@ bool GLTexture::setAndroidStorageImpl(AndroidStorageImpl impl)
 					logErr("Can't use GraphicBuffer without OES_EGL_image extension");
 					return false;
 				}
-				Base::GraphicBuffer gb;
+				Base::GraphicBuffer gb{};
+				if(!gb.hasBufferMapper())
+				{
+					logErr("failed GraphicBuffer mapper initialization");
+					return false;
+				}
 				if(!gb.reallocate(256, 256, HAL_PIXEL_FORMAT_RGB_565, GRALLOC_USAGE_SW_WRITE_OFTEN | GRALLOC_USAGE_HW_TEXTURE))
 				{
 					logErr("failed GraphicBuffer allocation test");
@@ -1196,6 +1204,7 @@ bool GLTexture::setAndroidStorageImpl(AndroidStorageImpl impl)
 				}
 				gb.unlock();
 				androidStorageImpl_ = ANDROID_GRAPHIC_BUFFER;
+				GraphicBufferStorage::testPassed = true;
 				logMsg("using Android GraphicBuffer as texture storage");
 				return true;
 			}
@@ -1207,6 +1216,14 @@ bool GLTexture::setAndroidStorageImpl(AndroidStorageImpl impl)
 			if(!useExternalEGLImages)
 			{
 				logErr("can't use SurfaceTexture without OES_EGL_image_external");
+				return false;
+			}
+			// check if external textures work in GLSL
+			if(texExternalReplaceProgram.compile())
+				autoReleaseShaderCompiler();
+			if(!texExternalReplaceProgram)
+			{
+				logErr("can't use SurfaceTexture due to test shader compilation error");
 				return false;
 			}
 			androidStorageImpl_ = ANDROID_SURFACE_TEXTURE;
@@ -1227,6 +1244,23 @@ bool GLTexture::isAndroidGraphicBufferStorageWhitelisted()
 bool GLTexture::isExternal()
 {
 	return target == GL_TEXTURE_EXTERNAL_OES;
+}
+
+const char *GLTexture::androidStorageImplStr(AndroidStorageImpl impl)
+{
+	switch(impl)
+	{
+		case ANDROID_AUTO: return "Auto";
+		case ANDROID_NONE: return "Standard";
+		case ANDROID_GRAPHIC_BUFFER: return "Graphic Buffer";
+		case ANDROID_SURFACE_TEXTURE: return "Surface Texture";
+	}
+	return "Unknown";
+}
+
+const char *GLTexture::androidStorageImplStr()
+{
+	return androidStorageImplStr(androidStorageImpl());
 }
 #endif
 

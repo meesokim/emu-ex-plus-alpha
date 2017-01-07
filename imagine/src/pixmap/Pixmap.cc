@@ -16,8 +16,8 @@
 #define LOGTAG "Pixmap"
 #include <imagine/pixmap/Pixmap.hh>
 #include <imagine/logger/logger.h>
-#include <imagine/util/fixed.hh>
 #include <imagine/util/assume.h>
+#include <imagine/util/algorithm.h>
 #include <cstring>
 
 namespace IG
@@ -95,14 +95,14 @@ void Pixmap::clear(IG::WP pos, IG::WP size)
 	char *destData = pixel(pos);
 	if(!isPadded() && (int)w() == size.x)
 	{
-		memset(destData, 0, format().pixelBytes(size.x * size.y));
+		std::fill_n(destData, format().pixelBytes(size.x * size.y), 0);
 	}
 	else
 	{
 		uint lineBytes = format().pixelBytes(size.x);
 		iterateTimes(size.y, i)
 		{
-			memset(destData, 0, lineBytes);
+			std::fill_n(destData, lineBytes, 0);
 			destData += pitch;
 		}
 	}

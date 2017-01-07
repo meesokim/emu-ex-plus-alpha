@@ -19,8 +19,10 @@
 #include <sys/eventfd.h>
 #include <imagine/base/Screen.hh>
 #include <imagine/base/Base.hh>
-#include <imagine/base/GLContext.hh>
+#include <imagine/base/EventLoop.hh>
 #include <imagine/time/Time.hh>
+#include <imagine/util/algorithm.h>
+#include <imagine/logger/logger.h>
 #include "internal.hh"
 #include "android.hh"
 
@@ -64,7 +66,7 @@ bool EventFDFrameTimer::init(JNIEnv *env, jobject activity)
 		return false;
 	logMsg("eventfd %d for frame timer", fd);
 	// this callback should behave as the "idle-handler" so input-related fds are processed in a timely manner
-	int ret = ALooper_addFd(activityLooper(), fd, ALOOPER_POLL_CALLBACK, ALOOPER_EVENT_INPUT,
+	int ret = ALooper_addFd(EventLoop::forThread().nativeObject(), fd, ALOOPER_POLL_CALLBACK, ALOOPER_EVENT_INPUT,
 		[](int fd, int, void *data)
 		{
 			auto &frameTimer = *((EventFDFrameTimer*)data);
@@ -94,7 +96,6 @@ bool EventFDFrameTimer::init(JNIEnv *env, jobject activity)
 			deviceWindow()->setNeedsDraw(true);
 			screen.frameUpdate(screen.currFrameTimestamp);
 			screen.prevFrameTimestamp = screen.currFrameTimestamp;
-			GLContext::swapPresentedBuffers(*deviceWindow());
 			if(screen.isPosted())
 			{
 				screen.currFrameTimestamp = IG::Time::now().nSecs();
@@ -170,7 +171,7 @@ bool FrameworkFrameTimer::init(JNIEnv *env, jobject activity)
 				})
 			}
 		};
-		env->RegisterNatives(choreographerHelperCls, method, sizeofArray(method));
+		env->RegisterNatives(choreographerHelperCls, method, IG::size(method));
 	}
 	else // MessageQueue.IdleHandler
 	{
@@ -195,7 +196,6 @@ bool FrameworkFrameTimer::init(JNIEnv *env, jobject activity)
 					deviceWindow()->setNeedsDraw(true);
 					screen.frameUpdate(screen.currFrameTimestamp);
 					screen.prevFrameTimestamp = screen.currFrameTimestamp;
-					GLContext::swapPresentedBuffers(*deviceWindow());
 					if(screen.isPosted())
 					{
 						screen.currFrameTimestamp = IG::Time::now().nSecs();
@@ -209,7 +209,7 @@ bool FrameworkFrameTimer::init(JNIEnv *env, jobject activity)
 				})
 			}
 		};
-		env->RegisterNatives(idleHelperCls, method, sizeofArray(method));
+		env->RegisterNatives(idleHelperCls, method, IG::size(method));
 	}
 	return true;
 }

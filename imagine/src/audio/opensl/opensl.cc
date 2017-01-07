@@ -16,7 +16,8 @@
 #define LOGTAG "OpenSL"
 #include <imagine/audio/Audio.hh>
 #include <imagine/logger/logger.h>
-#include <imagine/util/number.h>
+#include <imagine/util/algorithm.h>
+#include <imagine/util/math/int.hh>
 #include "../../base/android/android.hh"
 #include <SLES/OpenSLES.h>
 #include <SLES/OpenSLES_Android.h>
@@ -117,12 +118,12 @@ static void init()
 	assert(result == SL_RESULT_SUCCESS);
 }
 
-CallResult openPcm(const PcmFormat &format)
+std::error_code openPcm(const PcmFormat &format)
 {
 	if(player)
 	{
 		logWarn("called openPcm when pcm already on");
-		return OK;
+		return {};
 	}
 	if(unlikely(!isInit()))
 		init();
@@ -151,13 +152,13 @@ CallResult openPcm(const PcmFormat &format)
 	SLDataLocator_OutputMix outMixLoc = { SL_DATALOCATOR_OUTPUTMIX, outMix };
 	SLDataSink sink = { &outMixLoc, nullptr };
 	const SLInterfaceID ids[] = { SL_IID_ANDROIDSIMPLEBUFFERQUEUE, SL_IID_VOLUME };
-	const SLboolean req[sizeofArray(ids)] = { SL_BOOLEAN_TRUE, SL_BOOLEAN_FALSE };
-	SLresult result = (*slI)->CreateAudioPlayer(slI, &player, &audioSrc, &sink, sizeofArray(ids), ids, req);
+	const SLboolean req[IG::size(ids)] = { SL_BOOLEAN_TRUE, SL_BOOLEAN_FALSE };
+	SLresult result = (*slI)->CreateAudioPlayer(slI, &player, &audioSrc, &sink, IG::size(ids), ids, req);
 	if(result != SL_RESULT_SUCCESS)
 	{
 		logErr("CreateAudioPlayer returned 0x%X", (uint)result);
 		player = nullptr;
-		return INVALID_PARAMETER;
+		return {EINVAL, std::system_category()};
 	}
 
 	result = (*player)->Realize(player, SL_BOOLEAN_FALSE);
@@ -179,7 +180,7 @@ CallResult openPcm(const PcmFormat &format)
 	(*playerI)->SetPlayState(playerI, SL_PLAYSTATE_PAUSED);
 
 	logMsg("PCM opened");
-	return OK;
+	return {};
 }
 
 void closePcm()

@@ -2,14 +2,19 @@ ifndef inc_main
 inc_main := 1
 
 # -O3 is faster with MSX.emu
-CFLAGS_OPTIMIZE_RELEASE_DEFAULT += -O3
+CFLAGS_OPTIMIZE_LEVEL_RELEASE_DEFAULT = -O3
 
 include $(IMAGINE_PATH)/make/imagineAppBase.mk
 
 SRC += main/Main.cc \
+main/options.cc \
+main/input.cc \
 main/EmuControls.cc \
+main/EmuMenuViews.cc \
 main/BlueMSXApi.cc \
-main/Board.cc
+main/Board.cc \
+main/ziphelper.cc \
+main/RomLoader.cc
 
 BMSX := blueMSX
 
@@ -35,7 +40,6 @@ CPPFLAGS += -I$(projectPath)/src \
 -I$(projectPath)/src/$(BMSX)/Emulator \
 -I$(projectPath)/src/$(BMSX)/Input \
 -I$(projectPath)/src/$(BMSX)/Utils \
--I$(projectPath)/src/$(BMSX)/Unzip \
 -I$(projectPath)/src/$(BMSX)/Language \
 -I$(projectPath)/src/$(BMSX)/IoDevice \
 -I$(projectPath)/src/$(BMSX)/Debugger
@@ -101,16 +105,11 @@ $(BMSX)/IoDevice/HarddiskIDE.c
 
 # Utils
 SRC += $(BMSX)/Utils/SaveState.c \
-$(BMSX)/Utils/ziphelper.c \
-$(BMSX)/Utils/ZipFromMem.c \
 $(BMSX)/Utils/TokenExtract.c \
 $(BMSX)/Utils/IniFileParser.c \
 $(BMSX)/Utils/IsFileExtension.c
+# $(BMSX)/Utils/ZipFromMem.c \
 # $(BMSX)/Utils/StrcmpNoCase.c
-
-# Unzip
-#SRC += $(BMSX)/Unzip/deflate.c $(BMSX)/Unzip/unzip.c $(BMSX)/Unzip/zip.c $(BMSX)/Unzip/ioapi.c \
-#$(BMSX)/Unzip/zutil.c $(BMSX)/Unzip/trees.c
 
 # Input
 SRC += $(BMSX)/Input/JoystickPort.c \
@@ -133,7 +132,6 @@ $(BMSX)/Board/Coleco.c
 # $(BMSX)/Memory/SlotManager.c
 SRC += $(BMSX)/Memory/ram1kBMirrored.c \
 $(BMSX)/Memory/ramNormal.c \
-$(BMSX)/Memory/RomLoader.c \
 $(BMSX)/Debugger/DebugDeviceManager.c \
 $(BMSX)/Memory/DeviceManager.c \
 $(BMSX)/Memory/ramMapper.c \
@@ -248,7 +246,6 @@ ifdef RELEASE
 endif
 
 include $(EMUFRAMEWORK_PATH)/package/emuframework.mk
-include $(IMAGINE_PATH)/make/package/unzip.mk
 
 include $(IMAGINE_PATH)/make/imagineAppTarget.mk
 

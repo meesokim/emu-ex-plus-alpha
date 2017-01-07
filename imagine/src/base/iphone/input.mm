@@ -18,7 +18,6 @@ static_assert(__has_feature(objc_arc), "This file requires ARC");
 #import <CoreFoundation/CoreFoundation.h>
 #include <dlfcn.h>
 #include <imagine/input/Input.hh>
-#include <imagine/input/DragPointer.hh>
 #include <imagine/logger/logger.h>
 #import "MainApp.hh"
 #include "../../input/private.hh"
@@ -144,7 +143,7 @@ uint startSysTextInput(InputTextDelegate callback, const char *initialText, cons
 	{
 		vkbdField = [[UITextField alloc] initWithFrame: toCGRect(*deviceWindow(), textRect)];
 		setupTextView(vkbdField, [NSString stringWithCString:initialText encoding: NSUTF8StringEncoding /*NSASCIIStringEncoding*/]);
-		[deviceWindow()->glView() addSubview: vkbdField];
+		[deviceWindow()->uiWin().rootViewController.view addSubview: vkbdField];
 	}
 	else
 	{
@@ -291,7 +290,7 @@ void showSoftInput() {}
 void hideSoftInput() {}
 bool softInputIsActive() { return false; }
 
-CallResult init()
+void init()
 {
 	addDevice(keyDev);
 	GSEventIsHardwareKeyboardAttached = (GSEventIsHardwareKeyboardAttachedProto)dlsym(RTLD_DEFAULT, "GSEventIsHardwareKeyboardAttached");
@@ -314,7 +313,6 @@ CallResult init()
 	#ifdef CONFIG_INPUT_APPLE_GAME_CONTROLLER
 	initAppleGameControllers();
 	#endif
-	return OK;
 }
 
 }

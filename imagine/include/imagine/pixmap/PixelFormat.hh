@@ -1,6 +1,6 @@
 #pragma once
 
-#include <imagine/engine-globals.h>
+#include <imagine/config/defs.hh>
 #include <imagine/pixmap/PixelDesc.hh>
 
 namespace IG
@@ -23,6 +23,7 @@ enum PixelFormatID
 	PIXEL_BGRA8888,
 	PIXEL_ARGB8888,
 	PIXEL_ABGR8888,
+	PIXEL_RGBX8888,
 	PIXEL_END,
 	PIXEL_MAX = PIXEL_END - 1
 };
@@ -42,6 +43,7 @@ static constexpr PixelDesc PIXEL_DESC_RGBA8888 	{8, 8, 8, 8, 24,	16, 8, 	0, 	4, 
 static constexpr PixelDesc PIXEL_DESC_BGRA8888 	{8, 8, 8, 8, 8, 	16, 24, 0, 	4, "BGRA8888"};
 static constexpr PixelDesc PIXEL_DESC_ARGB8888 	{8, 8, 8, 8, 16,	8, 	0, 	24, 4, "ARGB8888"};
 static constexpr PixelDesc PIXEL_DESC_ABGR8888 	{8, 8, 8, 8, 0,		8, 	16, 24, 4, "ABGR8888"};
+static constexpr PixelDesc PIXEL_DESC_RGBX8888 	{8, 8, 8, 0, 24,	16, 8, 	0, 	4, "RGBX8888"};
 
 class PixelFormat
 {
@@ -104,26 +106,8 @@ public:
 
 	static constexpr PixelDesc desc(PixelFormatID id)
 	{
-		return
-			id == PIXEL_I8 ? PIXEL_DESC_I8 :
-			id == PIXEL_A8 ? PIXEL_DESC_A8 :
-			id == PIXEL_IA88 ? PIXEL_DESC_IA88 :
-			id == PIXEL_RGB565 ? PIXEL_DESC_RGB565 :
-			id == PIXEL_RGBA5551 ? PIXEL_DESC_RGBA5551 :
-			id == PIXEL_ABGR1555 ? PIXEL_DESC_ABGR1555 :
-			id == PIXEL_RGBA4444 ? PIXEL_DESC_RGBA4444 :
-			id == PIXEL_ABGR4444 ? PIXEL_DESC_ABGR4444 :
-			id == PIXEL_RGB888 ? PIXEL_DESC_RGB888 :
-			id == PIXEL_BGR888 ? PIXEL_DESC_BGR888 :
-			id == PIXEL_RGBA8888 ? PIXEL_DESC_RGBA8888 :
-			id == PIXEL_BGRA8888 ? PIXEL_DESC_BGRA8888 :
-			id == PIXEL_ARGB8888 ? PIXEL_DESC_ARGB8888 :
-			id == PIXEL_ABGR8888 ? PIXEL_DESC_ABGR8888 :
-			PIXEL_DESC_NONE;
-		// TODO: can use switch statement in constexpr with GCC 5.0
-		/*switch(id)
+		switch(id)
 		{
-			default: return PIXEL_DESC_NONE;
 			case PIXEL_I8: return PIXEL_DESC_I8;
 			case PIXEL_A8: return PIXEL_DESC_A8;
 			case PIXEL_IA88: return PIXEL_DESC_IA88;
@@ -138,7 +122,11 @@ public:
 			case PIXEL_BGRA8888: return PIXEL_DESC_BGRA8888;
 			case PIXEL_ARGB8888: return PIXEL_DESC_ARGB8888;
 			case PIXEL_ABGR8888: return PIXEL_DESC_ABGR8888;
-		}*/
+			case PIXEL_RGBX8888: return PIXEL_DESC_RGBX8888;
+			case PIXEL_NONE: ;
+			case PIXEL_END: ;
+		}
+		return PIXEL_DESC_NONE;
 	}
 };
 
@@ -157,5 +145,6 @@ static constexpr PixelFormat PIXEL_FMT_RGBA8888{PIXEL_RGBA8888};
 static constexpr PixelFormat PIXEL_FMT_BGRA8888{PIXEL_BGRA8888};
 static constexpr PixelFormat PIXEL_FMT_ARGB8888{PIXEL_ARGB8888};
 static constexpr PixelFormat PIXEL_FMT_ABGR8888{PIXEL_ABGR8888};
+static constexpr PixelFormat PIXEL_FMT_RGBX8888{PIXEL_RGBX8888};
 
 }

@@ -7,9 +7,12 @@ include $(imagineSrcDir)/input/build.mk
 LDLIBS += -lpthread
 
 SRC += base/linux/linux.cc \
+ base/linux/DRMFrameTimer.cc \
  base/common/timer/TimerFD.cc \
  base/common/PosixPipe.cc \
  util/string/glibc.c
+
+include $(IMAGINE_PATH)/make/package/libdrm.mk
 
 linuxWinSystem ?= x11
 
@@ -23,8 +26,6 @@ ifeq ($(linuxEventLoop), glib)
  configDefs += CONFIG_BASE_GLIB
  SRC += base/common/eventloop/GlibEventLoop.cc
  include $(IMAGINE_PATH)/make/package/glib.mk
-else
- SRC += base/common/eventloop/EPollEventLoop.cc
 endif
 
 ifneq ($(SUBENV), pandora)

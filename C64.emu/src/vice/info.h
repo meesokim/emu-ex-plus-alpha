@@ -4,6 +4,7 @@
  * Written by
  *  Ettore Perazzoli <ettore@comm2000.it>
  *  Andreas Boose <viceteam@t-online.de>
+ *  Marco van den Heuvel <blackystardust68@yahoo.com>
  *
  * This file is part of VICE, the Versatile Commodore Emulator.
  * See README for copyright notice.
@@ -38,7 +39,7 @@ extern const char info_contrib_text[];
 
 extern const char info_warranty_text[];
 
-#ifdef USE_SDLUI
+#if defined(USE_SDLUI) || defined(USE_SDLUI2)
 
 #ifdef WINMIPS
 extern const char *info_license_text40[];

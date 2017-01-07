@@ -6,6 +6,7 @@
  *
  * Written by
  *  Spiro Trikaliotis <spiro.trikaliotis@gmx.de>
+ *  Marco van den Heuvel <blackystardust68@yahoo.com>
  *
  * based on code from network.c written by
  *  Andreas Matthies <andreas.matthies@gmx.net>
@@ -380,7 +381,9 @@ static vice_network_socket_address_t * vice_network_alloc_new_socket_address(voi
 */
 vice_network_socket_t * vice_network_server(const vice_network_socket_address_t * server_address)
 {
+#ifndef WATCOM_COMPILE
     int socket_reuse_address = 1;
+#endif
     int sockfd = INVALID_SOCKET;
     int error = 1;
 

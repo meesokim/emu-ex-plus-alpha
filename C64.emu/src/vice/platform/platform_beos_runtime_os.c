@@ -31,6 +31,7 @@
    - Haiku R1 Alpha3 x86
    - Haiku R1 Alpha4 x86
    - Haiku R1 Alpha4 amd64/x86_64
+   - Haiku Nightly hrev505610 x86 (2016-10-22)
 */
 
 /* Binary compatibility table:
@@ -120,6 +121,7 @@ char *platform_get_beos_runtime_os(void)
     return platform_name;
 }
 
+#ifdef WORDS_BIGENDIAN
 /* TODO: cpu_types enum in the Haiku version of OS.h
    lists many more PPC CPU types. */
 char *platform_get_beosppc_runtime_cpu(void)
@@ -155,4 +157,5 @@ char *platform_get_beosppc_runtime_cpu(void)
     }
     return platform_cpu;
 }
+#endif
 #endif

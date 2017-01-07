@@ -42,6 +42,14 @@ using std::sprintf;
 
 extern "C" {
 
+#ifdef _MSC_VER
+#  if (_MSC_VER == 1500)
+#    define _IVEC_H_INCLUDED
+#    define _FVEC_H_INCLUDED
+#    define _DVEC_H_INCLUDED
+#  endif
+#endif
+
 /* QNX has problems with const and inline definitions
    in its string.h file when using g++ */
 
@@ -138,7 +146,7 @@ static int resid_init(sound_t *psid, int speed, int cycles_per_sec, int factor)
     if (resources_get_int("SidResidGain", &gain_percentage) < 0) {
         return 0;
     }
-    
+
     if (resources_get_int("SidResidFilterBias", &filter_bias_mV) < 0) {
         return 0;
     }
@@ -275,7 +283,10 @@ static void resid_state_read(sound_t *psid, sid_snapshot_state_t *sid_state)
     reSID::SID::State state;
     unsigned int i;
 
-    state = psid->sid->read_state();
+    /* when sound is disabled *psid is NULL */
+    if (psid) {
+        state = psid->sid->read_state();
+    }
 
     for (i = 0; i < 0x20; i++) {
         sid_state->sid_register[i] = (BYTE)state.sid_register[i];

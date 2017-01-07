@@ -27,6 +27,7 @@
 
 static const uint framesToRun = 60*60;
 static Base::Window mainWin;
+static Gfx::Drawable drawable;
 static Gfx::ProjectionPlane projP;
 static Gfx::Mat4 projMat;
 static Gfx::GCRect testRect;
@@ -39,7 +40,8 @@ static TestParams testParam[] =
 	{TEST_WRITE, {320, 224}},
 };
 #ifdef __ANDROID__
-static std::unique_ptr<RootCpufreqParamSetter> cpuFreq{};
+static std::unique_ptr<Base::RootCpufreqParamSetter> cpuFreq{};
+static std::unique_ptr<Base::UserActivityFaker> userActivityFaker{};
 #endif
 
 static void placeElements()
@@ -71,6 +73,8 @@ static void cleanupTest()
 	#ifdef __ANDROID__
 	if(cpuFreq)
 		cpuFreq->setDefaults();
+	if(userActivityFaker)
+		userActivityFaker->stop();
 	#endif
 }
 
@@ -91,6 +95,8 @@ TestFramework *startTest(Base::Window &win, const TestParams &t)
 	#ifdef __ANDROID__
 	if(cpuFreq)
 		cpuFreq->setLowLatency();
+	if(userActivityFaker)
+		userActivityFaker->start();
 	#endif
 
 	switch(t.test)
@@ -135,23 +141,19 @@ TestFramework *startTest(Base::Window &win, const TestParams &t)
 namespace Base
 {
 
-CallResult onInit(int argc, char** argv)
+void onInit(int argc, char** argv)
 {
 	Base::setOnExit(
 		[](bool backgrounded)
 		{
 			cleanupTest();
-			if(!backgrounded)
-			{
-				picker.deinit();
-				View::defaultFace->free();
-			}
+			drawable.freeCaches();
+			Gfx::finish();
 		});
 
 	Gfx::init();
 	View::compileGfxPrograms();
-	View::defaultFace = ResourceFace::loadSystem();
-	assert(View::defaultFace);
+	View::defaultFace = Gfx::GlyphTextureSet::makeSystem(IG::FontSettings{});
 	WindowConfig winConf;
 
 	winConf.setOnSurfaceChange(
@@ -166,12 +168,13 @@ CallResult onInit(int argc, char** argv)
 				testRect = projP.unProjectRect(viewport.rectWithRatioBestFitFromViewport(0, 0, 4./3., C2DO, C2DO));
 				placeElements();
 			}
+			Gfx::updateDrawableForSurfaceChange(drawable, change);
 		});
 
 	winConf.setOnDraw(
 		[](Base::Window &win, Base::Window::DrawParams params)
 		{
-			Gfx::updateCurrentWindow(win, params, projP.viewport, projMat);
+			Gfx::updateCurrentDrawable(drawable, win, params, projP.viewport, projMat);
 			if(!activeTest)
 			{
 				Gfx::clear();
@@ -186,11 +189,12 @@ CallResult onInit(int argc, char** argv)
 			{
 				activeTest->lastFramePresentTime.atWinPresent = IG::Time::now();
 			}
-			Gfx::presentWindow(win);
+			Gfx::presentDrawable(drawable);
 			if(activeTest)
 			{
 				activeTest->lastFramePresentTime.atWinPresentEnd = IG::Time::now();
 			}
+			Gfx::finishPresentDrawable(drawable);
 		});
 
 	winConf.setOnInputEvent(
@@ -215,24 +219,28 @@ CallResult onInit(int argc, char** argv)
 	Gfx::initWindow(mainWin, winConf);
 	mainWin.setTitle("Frame Rate Test");
 	uint faceSize = mainWin.heightSMMInPixels(3.5);
-	View::defaultFace->applySettings(faceSize);
-	View::defaultFace->precacheAlphaNum();
-	View::defaultFace->precache(":.%()");
-	picker.init(testParam, sizeofArray(testParam));
+	View::defaultFace.setFontSettings(faceSize);
+	View::defaultFace.precacheAlphaNum();
+	View::defaultFace.precache(":.%()");
+	picker.setTests(testParam, IG::size(testParam));
 	mainWin.show();
 
 	#ifdef __ANDROID__
-	bool manageCPUFreq = true;
+	bool manageCPUFreq = false;
 	if(manageCPUFreq)
 	{
-		cpuFreq = std::make_unique<RootCpufreqParamSetter>();
+		cpuFreq = std::make_unique<Base::RootCpufreqParamSetter>();
 		if(!(*cpuFreq))
 		{
 			cpuFreq.reset();
 		}
 	}
+	bool fakeUserActivity = true;
+	if(fakeUserActivity)
+	{
+		userActivityFaker = std::make_unique<Base::UserActivityFaker>();
+	}
 	#endif
-	return OK;
 }
 
 }

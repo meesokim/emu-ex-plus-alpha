@@ -82,11 +82,11 @@ struct draw_buffer_s {
     /* Height of emulator screen (physical screen on the machine where the emulator runs) in pixels */
     unsigned int canvas_physical_height;
     /* Maximum theoretical width of draw_buffer that would fit in the emulator screen.
-    Typically, it is the same as canvas_physical_width if no horizontal stretch is used (videoconfig->doublesizex == 0) and smaller if it is used.
+    Typically, it is the same as canvas_physical_width if no horizontal stretch is used (videoconfig->scalex == 1) and smaller if it is used.
     TODO do we really need it? */
     unsigned int canvas_width;
     /* Maximum theoretical height of draw_buffer that would fit in the emulator screen.
-    Typically, it is the same as canvas_physical_width if no vertical stretch is used (videoconfig->doublesizey == 0) and smaller if it is used.
+    Typically, it is the same as canvas_physical_width if no vertical stretch is used (videoconfig->scaley == 1) and smaller if it is used.
     TODO do we really need it? */
     unsigned int canvas_height;
     /* Width of the visible subset of draw_buffer, in pixels. Typically same as geometry->screen_size.width */
@@ -182,8 +182,8 @@ struct video_render_config_s {
     video_chip_cap_t *cap;         /* Which renderers are allowed?  */
     int rendermode;                /* What renderer is active?  */
     int double_size_enabled;       /* Double size enabled?  */
-    int doublesizex;               /* contains the actual magnification factor - 1 (> 0 if double size is enabled and screen is large enough in x direction) */
-    int doublesizey;               /* contains the actual magnification factor - 1 (> 0 if double size is enabled and screen is large enough in y direction) */
+    int scalex;                    /* Horizontal scaling */
+    int scaley;                    /* Vertical scaling */
     int doublescan;                /* Doublescan enabled?  */
     int hwscale;                   /* Hardware scaling enabled? */
     int scale2x;                   /* Scale2x enabled?  */
@@ -205,11 +205,11 @@ struct video_render_config_s {
 typedef struct video_render_config_s video_render_config_t;
 
 extern void video_render_initconfig(video_render_config_t *config);
-extern void video_render_setphysicalcolor(video_render_config_t *config,
+extern VICE_API void video_render_setphysicalcolor(video_render_config_t *config,
                                           int index, DWORD color, int depth);
-extern void video_render_setrawrgb(unsigned int index, DWORD r, DWORD g,
+extern VICE_API void video_render_setrawrgb(unsigned int index, DWORD r, DWORD g,
                                    DWORD b);
-extern void video_render_initraw(struct video_render_config_s *videoconfig);
+extern VICE_API void video_render_initraw(struct video_render_config_s *videoconfig);
 
 /**************************************************************/
 
@@ -218,27 +218,27 @@ extern int video_cmdline_options_init(void);
 extern int video_init(void);
 extern void video_shutdown(void);
 
-extern struct video_canvas_s *video_canvas_create(struct video_canvas_s *canvas,
+extern VICE_API struct video_canvas_s *video_canvas_create(struct video_canvas_s *canvas,
                                                   unsigned int *width, unsigned int *height,
                                                   int mapped);
-extern void video_arch_canvas_init(struct video_canvas_s *canvas);
+extern VICE_API void video_arch_canvas_init(struct video_canvas_s *canvas);
 extern void video_canvas_shutdown(struct video_canvas_s *canvas);
 extern struct video_canvas_s *video_canvas_init(void);
-extern void video_canvas_refresh(struct video_canvas_s *canvas,
+extern VICE_API void video_canvas_refresh(struct video_canvas_s *canvas,
                                  unsigned int xs, unsigned int ys,
                                  unsigned int xi, unsigned int yi,
                                  unsigned int w, unsigned int h);
-extern int video_canvas_set_palette(struct video_canvas_s *canvas,
+extern VICE_API int video_canvas_set_palette(struct video_canvas_s *canvas,
                                     struct palette_s *palette);
 /* This will go away.  */
 extern int video_canvas_palette_set(struct video_canvas_s *canvas,
                                     struct palette_s *palette);
 extern void video_canvas_create_set(struct video_canvas_s *canvas);
-extern void video_canvas_destroy(struct video_canvas_s *canvas);
+extern VICE_API void video_canvas_destroy(struct video_canvas_s *canvas);
 extern void video_canvas_map(struct video_canvas_s *canvas);
 extern void video_canvas_unmap(struct video_canvas_s *canvas);
-extern void video_canvas_resize(struct video_canvas_s *canvas, char resize_canvas);
-extern void video_canvas_render(struct video_canvas_s *canvas, BYTE *trg,
+extern VICE_API void video_canvas_resize(struct video_canvas_s *canvas, char resize_canvas);
+extern VICE_API void video_canvas_render(struct video_canvas_s *canvas, BYTE *trg,
                                 int width, int height, int xs, int ys,
                                 int xt, int yt, int pitcht, int depth);
 extern void video_canvas_refresh_all(struct video_canvas_s *canvas);

@@ -21,6 +21,57 @@
 #include <archive.h>
 #include <archive_entry.h>
 
+static FS::file_type makeEntryType(int type)
+{
+	using namespace FS;
+	switch(type)
+	{
+		case AE_IFREG: return file_type::regular;
+		case AE_IFDIR: return file_type::directory;
+		case AE_IFLNK: return file_type::symlink;
+		case AE_IFBLK: return file_type::block;
+		case AE_IFCHR: return file_type::character;
+		case AE_IFIFO: return file_type::fifo;
+		case AE_IFSOCK: return file_type::socket;
+	}
+	return file_type::unknown;
+}
+
+const char *ArchiveEntry::name() const
+{
+	assumeExpr(ptr);
+	auto name = archive_entry_pathname(ptr);
+	return name ? name : "";
+}
+
+FS::file_type ArchiveEntry::type() const
+{
+	assumeExpr(ptr);
+	return makeEntryType(archive_entry_filetype(ptr));
+}
+
+size_t ArchiveEntry::size() const
+{
+	assumeExpr(ptr);
+	return archive_entry_size(ptr);
+}
+
+uint32 ArchiveEntry::crc32() const
+{
+	assumeExpr(ptr);
+	return archive_entry_crc32(ptr);
+}
+
+ArchiveIO ArchiveEntry::moveIO()
+{
+	return ArchiveIO{std::move(*this)};
+}
+
+void ArchiveEntry::moveIO(ArchiveIO io)
+{
+	*this = io.releaseArchive();
+}
+
 ArchiveIO::~ArchiveIO()
 {
 	close();
@@ -28,15 +79,13 @@ ArchiveIO::~ArchiveIO()
 
 ArchiveIO::ArchiveIO(ArchiveIO &&o)
 {
-	arch = std::move(o.arch);
-	entry = o.entry;
+	entry = std::move(o.entry);
 }
 
 ArchiveIO &ArchiveIO::operator=(ArchiveIO &&o)
 {
 	close();
-	arch = std::move(o.arch);
-	entry = o.entry;
+	entry = std::move(o.entry);
 	return *this;
 }
 
@@ -45,50 +94,80 @@ ArchiveIO::operator GenericIO()
 	return GenericIO{*this};
 }
 
-std::shared_ptr<struct archive> ArchiveIO::releaseArchive()
+ArchiveEntry ArchiveIO::releaseArchive()
 {
-	return std::move(arch);
+	return std::move(entry);
 }
 
 const char *ArchiveIO::name()
 {
-	return archive_entry_pathname(entry);
+	return entry.name();
 }
 
-ssize_t ArchiveIO::read(void *buff, size_t bytes, CallResult *resultOut)
+BufferMapIO ArchiveIO::moveToMapIO()
 {
-	int bytesRead = archive_read_data(arch.get(), buff, bytes);
+	if(!*this)
+	{
+		return {};
+	}
+	auto s = size();
+	auto data = new char[s];
+	if(read(data, s) != (ssize_t)s)
+	{
+		logErr("error reading data for MapIO");
+		return {};
+	}
+	BufferMapIO mapIO{};
+	mapIO.open(data, s, [data](BufferMapIO &){ delete[] data; });
+	return mapIO;
+}
+
+ssize_t ArchiveIO::read(void *buff, size_t bytes, std::error_code *ecOut)
+{
+	if(!*this)
+	{
+		if(ecOut)
+			*ecOut = {EBADF, std::system_category()};
+		return -1;
+	}
+	int bytesRead = archive_read_data(entry.arch.get(), buff, bytes);
 	if(bytesRead < 0)
 	{
 		bytesRead = -1;
-		if(resultOut)
-			*resultOut = READ_ERROR;
+		if(ecOut)
+			*ecOut = {EIO, std::system_category()};
 	}
 	return bytesRead;
 }
 
-ssize_t ArchiveIO::write(const void* buff, size_t bytes, CallResult *resultOut)
+ssize_t ArchiveIO::write(const void* buff, size_t bytes, std::error_code *ecOut)
 {
-	if(resultOut)
-		*resultOut = UNSUPPORTED_OPERATION;
+	if(ecOut)
+		*ecOut = {ENOSYS, std::system_category()};
 	return -1;
 }
 
-off_t ArchiveIO::seek(off_t offset, IO::SeekMode mode, CallResult *resultOut)
+off_t ArchiveIO::seek(off_t offset, IO::SeekMode mode, std::error_code *ecOut)
 {
+	if(!*this)
+	{
+		if(ecOut)
+			*ecOut = {EBADF, std::system_category()};
+		return -1;
+	}
 	if(!isSeekModeValid(mode))
 	{
 		bug_exit("invalid seek mode: %d", (int)mode);
-		if(resultOut)
-			*resultOut = INVALID_PARAMETER;
+		if(ecOut)
+			*ecOut = {EINVAL, std::system_category()};
 		return -1;
 	}
-	long newPos = archive_seek_data(arch.get(), offset, mode);
+	long newPos = archive_seek_data(entry.arch.get(), offset, mode);
 	if(newPos < 0)
 	{
 		logErr("seek to offset %lld failed", (long long)offset);
-		if(resultOut)
-			*resultOut = IO_ERROR;
+		if(ecOut)
+			*ecOut = {EINVAL, std::system_category()};
 		return -1;
 	}
 	return newPos;
@@ -96,20 +175,20 @@ off_t ArchiveIO::seek(off_t offset, IO::SeekMode mode, CallResult *resultOut)
 
 void ArchiveIO::close()
 {
-	arch = {};
+	entry.arch = {};
 }
 
 size_t ArchiveIO::size()
 {
-	return archive_entry_size(entry);
+	return entry.size();
 }
 
 bool ArchiveIO::eof()
 {
-	return tell() == archive_entry_size(entry);
+	return tell() == (off_t)entry.size();
 }
 
 ArchiveIO::operator bool()
 {
-	return (bool)arch;
+	return (bool)entry.arch;
 }

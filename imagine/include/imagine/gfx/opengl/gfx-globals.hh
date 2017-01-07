@@ -1,9 +1,10 @@
 #pragma once
 
-#include <imagine/engine-globals.h>
-#include <imagine/util/fixed.hh>
+#include <imagine/config/defs.hh>
 #include <imagine/util/normalFloat.hh>
 #include <imagine/pixmap/PixelFormat.hh>
+#include <imagine/base/GLContext.hh>
+#include "glIncludes.h"
 
 #if defined __APPLE__ && !defined __ARM_ARCH_6K__
 #define CONFIG_GFX_MATH_GLKIT
@@ -12,7 +13,6 @@
 #endif
 
 #include <imagine/gfx/Mat4.hh>
-#include "glIncludes.h"
 
 namespace Config
 {
@@ -59,9 +59,9 @@ using VertexPos = float;
 using Angle = float;
 using TextureCoordinate = float;
 
-static constexpr Angle angleFromDegree(Angle deg) { return IG::toRadians(deg); }
+static constexpr Angle angleFromDegree(Angle deg) { return IG::radians(deg); }
 static constexpr Angle angleFromRadian(Angle rad) { return rad; }
-static constexpr Angle angleToDegree(Angle a) { return IG::toDegrees(a); }
+static constexpr Angle angleToDegree(Angle a) { return IG::degrees(a); }
 static constexpr Angle angleToRadian(Angle a) { return a; }
 
 static const uint gColor_steps = 255;
@@ -301,5 +301,7 @@ extern DefaultColorProgram noTexProgram;
 using ProgramImpl = GLSLProgram;
 
 enum { TEX_UNSET, TEX_2D_1, TEX_2D_2, TEX_2D_4, TEX_2D_EXTERNAL };
+
+using Drawable = Base::GLDrawable;
 
 }

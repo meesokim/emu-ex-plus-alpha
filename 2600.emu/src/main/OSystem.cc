@@ -13,9 +13,6 @@
 	You should have received a copy of the GNU General Public License
 	along with 2600.emu.  If not, see <http://www.gnu.org/licenses/> */
 
-#include <imagine/time/Time.hh>
-#include <imagine/logger/logger.h>
-#include <emuframework/EmuSystem.hh>
 #include <OSystem.hxx>
 #include <FrameBuffer.hxx>
 #include <EventHandler.hxx>
@@ -25,10 +22,13 @@
 #include <stella/emucore/SerialPort.hxx>
 #include <stella/emucore/Settings.hxx>
 #include "SoundGeneric.hh"
+#include <imagine/time/Time.hh>
+#include <imagine/logger/logger.h>
+#include <emuframework/EmuSystem.hh>
 
 OSystem osystem{};
 static Random myRandom{osystem};
-static EventHandler myEventHandler{};
+static EventHandler myEventHandler{osystem};
 static SerialPort mySerialPort{};
 static FrameBuffer myFrameBuffer{};
 static PropertiesSet myPropSet{""};
@@ -75,20 +75,19 @@ SerialPort& OSystem::serialPort() const
 	return mySerialPort;
 }
 
-void OSystem::makeConsole(Cartridge* cart, const Properties& props)
+void OSystem::makeConsole(unique_ptr<Cartridge>& cart, const Properties& props)
 {
-	myConsole = new Console(*this, cart, props);
+	myConsole = std::make_unique<Console>(*this, cart, props);
 }
 
 void OSystem::deleteConsole()
 {
-	delete myConsole;
-	myConsole = nullptr;
+	myConsole = {};
 }
 
 std::string OSystem::stateDir() const
 {
-	return ".";
+	return EmuSystem::savePath();
 }
 
 std::string OSystem::nvramDir() const

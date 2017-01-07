@@ -13,7 +13,7 @@
 	You should have received a copy of the GNU General Public License
 	along with Imagine.  If not, see <http://www.gnu.org/licenses/> */
 
-#define LOGTAG "GuiTable1D"
+#define LOGTAG "TableView"
 
 #include <imagine/gui/TableView.hh>
 #include <imagine/gui/MenuItem.hh>
@@ -21,53 +21,45 @@
 #include <imagine/gfx/GeomRect.hh>
 #include <imagine/input/Input.hh>
 #include <imagine/base/Base.hh>
-#include <algorithm>
-#include <imagine/util/number.h>
+#include <imagine/util/algorithm.h>
+#include <imagine/util/math/int.hh>
 
-Gfx::GC TableView::globalXIndent = 0;
+Gfx::GC TableView::globalXIndent{};
 
-void TableView::init(MenuItem **item, uint items, _2DOrigin align)
-{
-	var_selfs(item);
-	cells_ = items;
-	var_selfs(align);
-	selected = -1;
-	onlyScrollIfNeeded = false;
-	selectedIsActivated = false;
-}
+TableView::TableView(Base::Window &win, ItemsDelegate items, ItemDelegate item):
+	ScrollView{win}, items{items}, item{item}
+{}
 
-void TableView::deinit()
-{
-	iterateTimes(cells_, i)
-	{
-		item[i]->deinit();
-		cells_ = 0;
-	}
-}
+TableView::TableView(const char *name, Base::Window &win, ItemsDelegate items, ItemDelegate item):
+	ScrollView{name, win}, items{items}, item{item}
+{}
 
 void TableView::highlightCell(int idx)
 {
+	auto cells_ = items(*this);
 	if(!cells_)
 		return;
 	if(idx >= 0)
-		selected = nextSelectableElement(idx);
+		selected = nextSelectableElement(idx, cells_);
 	else
 		selected = -1;
 	postDraw();
 }
 
+void TableView::setAlign(_2DOrigin align)
+{
+	this->align = align;
+}
+
 void TableView::draw()
 {
+	auto cells_ = items(*this);
 	if(!cells_)
 		return;
-
 	using namespace Gfx;
-	ScrollView::updateGfx();
-	ScrollView::drawScrollContent();
-
 	auto y = viewRect().yPos(LT2DO);
 	auto x = viewRect().xPos(LT2DO);
-	int startYCell = std::min(scroll.offset / yCellSize, cells_ - 1);
+	int startYCell = std::min(scrollOffset() / yCellSize, cells_);
 	int endYCell = IG::clamp(startYCell + visibleCells, 0, cells_);
 	if(startYCell < 0)
 	{
@@ -75,17 +67,20 @@ void TableView::draw()
 		y += -startYCell * yCellSize;
 		startYCell = 0;
 	}
-	y -= scroll.offset % yCellSize;
+	//logMsg("draw cells [%d,%d)", startYCell, endYCell);
+	y -= scrollOffset() % yCellSize;
 
 	// draw separators
 	int yStart = y;
 	noTexProgram.use(projP.makeTranslate());
 	int selectedCellY = INT_MAX;
 	{
-		StaticArrayList<std::array<ColVertex, 4>, 96> vRect;
+		StaticArrayList<std::array<ColVertex, 4>, 80> vRect;
 		StaticArrayList<std::array<VertexIndex, 6>, vRect.maxSize()> vRectIdx;
 		auto headingColor = VertexColorPixelFormat.build(.4, .4, .4, 1.);
 		auto regularColor = VertexColorPixelFormat.build(.2, .2, .2, 1.);
+		auto regularYSize = std::max(1, window().heightSMMInPixels(.2));
+		auto headingYSize = std::max(2, window().heightSMMInPixels(.4));
 		for(int i = startYCell; i < endYCell; i++)
 		{
 			if(i == selected)
@@ -94,11 +89,11 @@ void TableView::draw()
 			}
 			if(i != 0)
 			{
-				int ySize = 1;
+				int ySize = regularYSize;
 				auto color = regularColor;
-				if(!elementIsSelectable(i - 1))
+				if(!elementIsSelectable(item(*this, i - 1)))
 				{
-					ySize = 4;
+					ySize = headingYSize;
 					color = headingColor;
 				}
 				vRectIdx.emplace_back(makeRectIndexArray(vRect.size()));
@@ -117,6 +112,9 @@ void TableView::draw()
 		}
 	}
 
+	// draw scroll bar
+	ScrollView::drawScrollContent();
+
 	// draw selected rectangle
 	if(selectedCellY != INT_MAX)
 	{
@@ -131,21 +129,22 @@ void TableView::draw()
 	for(int i = startYCell; i < endYCell; i++)
 	{
 		auto rect = IG::makeWindowRectRel({x, y}, {viewRect().xSize(), yCellSize});
-		drawElement(i, projP.unProjectRect(rect));
+		drawElement(i, item(*this, i), projP.unProjectRect(rect));
 		y += yCellSize;
 	}
 }
 
 void TableView::place()
 {
+	auto cells_ = items(*this);
 	iterateTimes(cells_, i)
 	{
 		//logMsg("compile item %d", i);
-		item[i]->compile(projP);
+		item(*this, i).compile(projP);
 	}
 	if(cells_)
 	{
-		setYCellSize(IG::makeEvenRoundedUp(item[0]->ySize()*2));
+		setYCellSize(IG::makeEvenRoundedUp(item(*this, 0).ySize()*2));
 		visibleCells = IG::divRoundUp(viewRect().ySize(), yCellSize) + 1;
 		scrollToFocusRect();
 	}
@@ -155,8 +154,13 @@ void TableView::place()
 
 void TableView::onAddedToController(Input::Event e)
 {
-	if((!Config::Input::POINTING_DEVICES || !e.isPointer()) && cells_)
-		selected = nextSelectableElement(0);
+	if((!Config::Input::POINTING_DEVICES || !e.isPointer()))
+	{
+		auto cells = items(*this);
+		if(!cells)
+			return;
+		selected = nextSelectableElement(0, cells);
+	}
 }
 
 void TableView::setScrollableIfNeeded(bool on)
@@ -170,14 +174,19 @@ void TableView::scrollToFocusRect()
 		return;
 	int topFocus = yCellSize * selected;
 	int bottomFocus = topFocus + yCellSize;
-	if(topFocus < scroll.offset)
+	if(topFocus < scrollOffset())
 	{
-		scroll.setOffset(topFocus);
+		setScrollOffset(topFocus);
 	}
-	else if(bottomFocus > scroll.offset + viewRect().ySize())
+	else if(bottomFocus > scrollOffset() + viewRect().ySize())
 	{
-		scroll.setOffset(bottomFocus - viewRect().ySize());
+		setScrollOffset(bottomFocus - viewRect().ySize());
 	}
+}
+
+void TableView::resetScroll()
+{
+	setScrollOffset(0);
 }
 
 void TableView::inputEvent(Input::Event e)
@@ -194,16 +203,6 @@ void TableView::inputEvent(Input::Event e)
 	}
 }
 
-void TableView::setDefaultXIndent(const Gfx::ProjectionPlane &projP)
-{
-	TableView::globalXIndent =
-		(Config::MACHINE_IS_OUYA) ? projP.xSMMSize(4) :
-		(Config::MACHINE_IS_PANDORA) ? projP.xSMMSize(2) :
-		(Config::envIsAndroid || Config::envIsIOS || Config::envIsWebOS) ? /*floor*/(projP.xSMMSize(1)) :
-		(Config::envIsPS3) ? /*floor*/(projP.xSMMSize(16)) :
-		/*floor*/(projP.xSMMSize(4));
-}
-
 void TableView::clearSelection()
 {
 	selected = -1;
@@ -212,7 +211,7 @@ void TableView::clearSelection()
 void TableView::setYCellSize(int s)
 {
 	yCellSize = s;
-	ScrollView::setContentSize({viewRect().xSize(), cells_ * s});
+	ScrollView::setContentSize({viewRect().xSize(), items(*this) * s});
 }
 
 IG::WindowRect TableView::focusRect()
@@ -223,32 +222,32 @@ IG::WindowRect TableView::focusRect()
 		return {};
 }
 
-int TableView::nextSelectableElement(int start)
+int TableView::nextSelectableElement(int start, int items)
 {
 	using namespace IG;
-	int elem = wrapToBound(start, 0, cells_);
-	iterateTimes(cells_, i)
+	int elem = wrapMinMax(start, 0, items);
+	iterateTimes(items, i)
 	{
-		if(elementIsSelectable(elem))
+		if(elementIsSelectable(item(*this, elem)))
 		{
 			return elem;
 		}
-		elem = wrapToBound(elem+1, 0, cells_);
+		elem = wrapMinMax(elem+1, 0, items);
 	}
 	return -1;
 }
 
-int TableView::prevSelectableElement(int start)
+int TableView::prevSelectableElement(int start, int items)
 {
 	using namespace IG;
-	int elem = wrapToBound(start, 0, cells_);
-	iterateTimes(cells_, i)
+	int elem = wrapMinMax(start, 0, items);
+	iterateTimes(items, i)
 	{
-		if(elementIsSelectable(elem))
+		if(elementIsSelectable(item(*this, elem)))
 		{
 			return elem;
 		}
-		elem = wrapToBound(elem-1, 0, cells_);
+		elem = wrapMinMax(elem-1, 0, items);
 	}
 	return -1;
 }
@@ -256,24 +255,30 @@ int TableView::prevSelectableElement(int start)
 bool TableView::handleTableInput(Input::Event e)
 {
 	using namespace IG;
-	if(cells_ == 0)
+	auto cells_ = items(*this);
+	if(!cells_)
 		return false;
 
 	bool movedSelected = false;
 
 	if(e.isPointer())
 	{
-		if(!viewRect().overlaps({e.x, e.y}) || e.button != Input::Pointer::LBUTTON)
+		if(!pointIsInView(e.pos()) || e.button != Input::Pointer::LBUTTON)
 		{
 			//logMsg("cursor not in table");
 			return false;
 		}
-
+		int i = ((e.y + scrollOffset()) - viewRect().y) / yCellSize;
+		if(i < 0 || i >= cells_)
+		{
+			//logMsg("pushed outside of item bounds");
+			return false;
+		}
+		auto &it = item(*this, i);
 		if(e.state == Input::PUSHED)
 		{
-			int i = ((e.y + scroll.offset) - viewRect().y) / yCellSize;
 			logMsg("input pushed on cell %d", i);
-			if(i >= 0 && i < cells_ && elementIsSelectable(i))
+			if(i >= 0 && i < cells_ && elementIsSelectable(it))
 			{
 				selected = i;
 				postDraw();
@@ -281,15 +286,14 @@ bool TableView::handleTableInput(Input::Event e)
 		}
 		else if(e.state == Input::RELEASED) // TODO, need to check that Input::PUSHED was sent on entry
 		{
-			int i = ((e.y + scroll.offset) - viewRect().y) / yCellSize;
 			//logMsg("input released on cell %d", i);
-			if(i >= 0 && i < cells_ && selected == i && elementIsSelectable(i))
+			if(i >= 0 && i < cells_ && selected == i && elementIsSelectable(it))
 			{
 				logDMsg("entry %d pushed", i);
 				selectedIsActivated = true;
 				postDraw();
 				selected = -1;
-				onSelectElement(e, i);
+				onSelectElement(e, i, it);
 			}
 		}
 	}
@@ -303,9 +307,9 @@ bool TableView::handleTableInput(Input::Event e)
 		{
 			//logMsg("move up %d", selected);
 			if(selected == -1)
-				selected = prevSelectableElement(cells_ - 1);
+				selected = prevSelectableElement(cells_ - 1, cells_);
 			else
-				selected = prevSelectableElement(selected - 1);
+				selected = prevSelectableElement(selected - 1, cells_);
 			logMsg("up, selected %d", selected);
 			postDraw();
 			movedSelected = true;
@@ -314,9 +318,9 @@ bool TableView::handleTableInput(Input::Event e)
 			|| (e.isRelativePointer() && e.y > 0))
 		{
 			if(selected == -1)
-				selected = nextSelectableElement(0);//0;
+				selected = nextSelectableElement(0, cells_);
 			else
-				selected = nextSelectableElement(selected + 1);
+				selected = nextSelectableElement(selected + 1, cells_);
 			logMsg("down, selected %d", selected);
 			postDraw();
 			movedSelected = true;
@@ -327,7 +331,7 @@ bool TableView::handleTableInput(Input::Event e)
 			{
 				logDMsg("entry %d pushed", selected);
 				selectedIsActivated = true;
-				onSelectElement(e, selected);
+				onSelectElement(e, selected, item(*this, selected));
 			}
 		}
 		else if(e.pushed() && e.isDefaultPageUpButton())
@@ -355,19 +359,29 @@ bool TableView::handleTableInput(Input::Event e)
 	return movedSelected;
 }
 
-void TableView::drawElement(uint i, Gfx::GCRect rect) const
+void TableView::drawElement(uint i, MenuItem &item, Gfx::GCRect rect) const
 {
 	using namespace Gfx;
 	setColor(COLOR_WHITE);
-	item[i]->draw(rect.x, rect.pos(C2DO).y, rect.xSize(), rect.ySize(), align, projP);
+	item.draw(rect.x, rect.pos(C2DO).y, rect.xSize(), rect.ySize(), align, projP);
 }
 
-void TableView::onSelectElement(Input::Event e, uint i)
+void TableView::onSelectElement(Input::Event e, uint i, MenuItem &item)
 {
-	item[i]->select(*this, e);
+	item.select(*this, e);
 }
 
-bool TableView::elementIsSelectable(uint i)
+bool TableView::elementIsSelectable(MenuItem &item)
 {
-	return item[i]->isSelectable;
+	return item.isSelectable;
+}
+
+void TableView::setDefaultXIndent(const Gfx::ProjectionPlane &projP)
+{
+	TableView::globalXIndent =
+		(Config::MACHINE_IS_OUYA) ? projP.xSMMSize(4) :
+		(Config::MACHINE_IS_PANDORA) ? projP.xSMMSize(2) :
+		(Config::envIsAndroid || Config::envIsIOS || Config::envIsWebOS) ? /*floor*/(projP.xSMMSize(1)) :
+		(Config::envIsPS3) ? /*floor*/(projP.xSMMSize(16)) :
+		/*floor*/(projP.xSMMSize(4));
 }

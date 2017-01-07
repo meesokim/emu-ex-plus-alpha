@@ -15,10 +15,11 @@
 	You should have received a copy of the GNU General Public License
 	along with Imagine.  If not, see <http://www.gnu.org/licenses/> */
 
-#include <imagine/engine-globals.h>
+#include <imagine/config/defs.hh>
 #include <imagine/pixmap/Pixmap.hh>
 #include <imagine/data-type/image/GfxImageSource.hh>
 #include <CoreGraphics/CGImage.h>
+#include <system_error>
 
 class PixelFormatDesc;
 
@@ -26,8 +27,8 @@ class Quartz2dImage
 {
 public:
 	constexpr Quartz2dImage() {}
-	CallResult load(const char *name);
-	CallResult readImage(IG::Pixmap &dest);
+	std::error_code load(const char *name);
+	std::error_code readImage(IG::Pixmap &dest);
 	static CallResult writeImage(const IG::Pixmap &pix, const char *name);
 	bool hasAlphaChannel();
 	bool isGrayscale();
@@ -48,10 +49,10 @@ public:
 	{
 		deinit();
 	}
-	CallResult load(const char *name);
-	CallResult loadAsset(const char *name);
+	std::error_code load(const char *name);
+	std::error_code loadAsset(const char *name);
 	void deinit();
-	CallResult write(IG::Pixmap &dest) override;
+	std::error_code write(IG::Pixmap dest) override;
 	IG::Pixmap lockPixmap() override;
 	void unlockPixmap() override;
 

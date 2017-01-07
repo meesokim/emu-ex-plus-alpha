@@ -15,6 +15,7 @@
 
 #include <emuframework/BundledGamesView.hh>
 #include <emuframework/EmuSystem.hh>
+#include <emuframework/FilePicker.hh>
 #include <imagine/logger/logger.h>
 #include <imagine/io/FileIO.hh>
 #include <imagine/io/BufferMapIO.hh>
@@ -22,38 +23,37 @@
 
 void loadGameCompleteFromRecentItem(uint result, Input::Event e);
 
-void BundledGamesView::init()
+BundledGamesView::BundledGamesView(Base::Window &win):
+	TableView
+	{
+		"Bundled Games",
+		win,
+		[this](const TableView &)
+		{
+			return 1;
+		},
+		[this](const TableView &, uint idx) -> MenuItem&
+		{
+			return game[0];
+		}
+	}
 {
-	uint i = 0;
 	auto &info = EmuSystem::bundledGameInfo(0);
-	game[0].init(info.displayName); item[i++] = &game[0];
-	game[0].onSelect() =
+	game[0] = {info.displayName,
 		[&info](TextMenuItem &t, View &, Input::Event ev)
 		{
-			#if defined __ANDROID__ || defined CONFIG_MACHINE_PANDORA
 			auto file = openAppAssetIO(info.assetName);
 			if(!file)
 			{
 				logErr("error opening bundled game asset: %s", info.assetName);
 				return;
 			}
-			auto res = EmuSystem::loadGameFromIO(file, info.assetName, info.assetName);
-			file.close();
-			#else
-			auto zipPath = FS::makePathStringPrintf("%s/%s", Base::assetPath().data(), info.assetName);
-			auto res = EmuSystem::loadGameFromPath(zipPath);
-			#endif
-			if(res == 1)
+			int loadGameRes = EmuSystem::loadGameFromFile(GenericIO{std::move(file)}, info.assetName);
+			if(loadGameRes == 1)
 			{
 				loadGameCompleteFromRecentItem(1, ev); // has same behavior as if loading from recent item
 			}
-			else if(res == 0)
-			{
-				EmuSystem::clearGamePaths();
-			}
-		};
-	assert(i <= sizeofArray(item));
-	TableView::init(item, i);
+		}};
 }
 
 [[gnu::weak]] const BundledGameInfo &EmuSystem::bundledGameInfo(uint idx)

@@ -11,7 +11,8 @@ android_minSDK ?= 9
 android_baseModuleSDK := 9
 android_targetSDK ?= 23
 
-android_soName := main
+android_metadata_soName ?= main
+android_makefileOpts += android_metadata_soName=$(android_metadata_soName)
 
 # Architecture setup
 
@@ -51,8 +52,6 @@ endif
 
 android_targetPath := target/$(android_buildName)
 
-android_useMOGASrc ?= 1
-
 ifdef imagineLibExt
  android_makefileOpts += imagineLibExt=$(imagineLibExt)
 endif
@@ -83,6 +82,10 @@ $(android_antProperties) :
 	@mkdir -p $(@D)
 	ln -s $(ANDROID_ANT_PROPERTIES) $@
 
+endif
+
+ifdef LTO_MODE
+ android_makefileOpts += LTO_MODE=$(LTO_MODE)
 endif
 
 resPath := $(projectPath)/res
@@ -168,17 +171,16 @@ $(android_drawableTVBannerPath) :
 	ln -rs $(resPath)/icons/tv-banner.png $@
 endif
 
-android_imagineJavaSrcPath := $(android_targetPath)/src/com/imagine
+android_imagineLib9SrcPath := $(IMAGINE_SDK_PATH)/android-java/imagine-v9.jar
+android_imagineLib9 := $(android_targetPath)/libs/imagine-v9.jar
 
-$(android_imagineJavaSrcPath) :
+$(android_imagineLib9) : | $(android_imagineLib9SrcPath)
 	@mkdir -p $(@D)
-	ln -s $(IMAGINE_PATH)/src/base/android/java/sdk-$(android_baseModuleSDK)/imagine $@
+	ln -s $| $@
+	mkdir -p $(android_targetPath)/src
 
-ifeq ($(android_useMOGASrc), 1)
-android_mogaJavaSrcPath := $(android_targetPath)/src/com/bda
-$(android_mogaJavaSrcPath) :
-	@mkdir -p $(@D)
-	ln -s $(IMAGINE_PATH)/src/base/android/java/bda $@
+ifeq ($(wildcard $(android_imagineLib9SrcPath)),)
+ $(error couldn't find $(android_imagineLib9SrcPath), make sure you've built and installed it with android-java.mk) 
 endif
 
 android_supportLib4SrcPath := $(android_sdkToolsPath)/../extras/android/support/v4/android-support-v4.jar
@@ -240,7 +242,7 @@ $(android_stringsXml) : $(projectPath)/metadata/conf.mk
 
 android_buildXml := $(android_targetPath)/build.xml
 
-$(android_buildXml) : | $(android_manifestXml) $(android_stringsXml) $(android_imagineJavaSrcPath) $(android_mogaJavaSrcPath) \
+$(android_buildXml) : | $(android_manifestXml) $(android_stringsXml) $(android_imagineLib9) \
 $(android_drawableIconPaths) $(android_assetsPath) $(android_antProperties) $(android_stylesXmlFiles) $(android_supportLib4)
 	android update project -p $(@D) -n $(android_metadata_project) -t android-$(android_targetSDK)
 	rm $(@D)/proguard-project.txt
@@ -391,3 +393,17 @@ android_cleanTargets += android-clean-project
 
 .PHONY: android-clean
 android-clean: $(android_cleanTargets)
+
+.DEFAULT:
+ifndef android_noArm
+	$(PRINT_CMD)$(MAKE) $(android_armMakeArgs) $@
+endif
+ifndef android_noArmv7
+	$(PRINT_CMD)$(MAKE) $(android_armv7MakeArgs) $@
+endif
+ifndef android_noArm64
+	$(PRINT_CMD)$(MAKE) $(android_arm64MakeArgs) $@
+endif
+ifndef android_noX86
+	$(PRINT_CMD)$(MAKE) $(android_x86MakeArgs) $@
+endif

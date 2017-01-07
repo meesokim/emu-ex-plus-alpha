@@ -39,6 +39,8 @@ class StateManager;
 class VideoDialog;
 
 #include "bspf.hxx"
+#undef HAVE_UNISTD_H
+#include "Console.hxx"
 
 class OSystem
 {
@@ -99,7 +101,7 @@ class OSystem
     Console& console() const { return *myConsole; }
     bool hasConsole() const { return myConsole != nullptr; }
 
-    void makeConsole(Cartridge* cart, const Properties& props);
+    void makeConsole(unique_ptr<Cartridge>& cart, const Properties& props);
     void deleteConsole();
 
     /**
@@ -189,5 +191,5 @@ class OSystem
 
   protected:
     // Pointer to the (currently defined) Console object
-    Console* myConsole{};
+    std::unique_ptr<Console> myConsole{};
 };

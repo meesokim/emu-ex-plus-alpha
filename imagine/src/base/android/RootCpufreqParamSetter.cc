@@ -29,7 +29,7 @@
 static int readIntFileValue(const char *path)
 {
 	PosixIO f;
-	if(f.open(path) != OK)
+	if(f.open(path))
 		return -1;
 	std::array<char, 32> buff{};
 	f.readAtPos(buff.data(), sizeof(buff)-1, 0);
@@ -38,6 +38,9 @@ static int readIntFileValue(const char *path)
 	return val;
 
 }
+
+namespace Base
+{
 
 RootCpufreqParamSetter::RootCpufreqParamSetter()
 {
@@ -118,4 +121,6 @@ void RootCpufreqParamSetter::setDefaults()
 			fprintf(rootShell, "echo -n %d > " SAMPLING_RATE_PATH "\n", origSamplingRate);
 	}
 	fflush(rootShell);
+}
+
 }

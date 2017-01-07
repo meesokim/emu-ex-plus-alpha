@@ -2,7 +2,6 @@
  * c64io.c - C64 io handling ($D000-$DFFF).
  *
  * Written by
- *  Andreas Boose <viceteam@t-online.de>
  *  Marco van den Heuvel <blackystardust68@yahoo.com>
  *
  * This file is part of VICE, the Versatile Commodore Emulator.
@@ -763,7 +762,7 @@ static void io_source_ioreg_add_onelist(struct mem_ioreg_list_s **mem_ioreg_list
             end = current->device->start_address + current->device->address_mask;
         }
 
-        mon_ioreg_add_list(mem_ioreg_list, current->device->name, current->device->start_address, end, current->device->dump);
+        mon_ioreg_add_list(mem_ioreg_list, current->device->name, current->device->start_address, end, current->device->dump, NULL);
         current = current->next;
     }
 }

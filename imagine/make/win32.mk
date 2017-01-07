@@ -1,5 +1,4 @@
 ENV := win32
-binStatic := 1
 
 ifndef target
  target = $(metadata_exec)
@@ -17,7 +16,7 @@ include $(buildSysPath)/gcc.mk
 ifndef PROFILE
  OPTIMIZE_LDFLAGS = -s
 endif
-LDFLAGS += -mwindows -Wl,-O1,--gc-sections,--as-needed,--stack,16777216
+LDFLAGS_SYSTEM += -mwindows -Wl,-O1,--gc-sections,--as-needed,--stack,16777216
 
 #-municode
 CPPFLAGS += -DWINVER=0x0501 -D_WIN32_WINNT=0x0501

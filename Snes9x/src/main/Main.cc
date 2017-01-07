@@ -1,10 +1,13 @@
 #define LOGTAG "main"
-#include <emuframework/EmuSystem.hh>
-#include <emuframework/EmuInput.hh>
-#include <emuframework/CommonFrameworkIncludes.hh>
-#include "EmuConfig.hh"
+#include <emuframework/EmuApp.hh>
+#include <emuframework/EmuAppInlines.hh>
+#include "internal.hh"
 
 #include <snes9x.h>
+#include <memmap.h>
+#include <display.h>
+#include <snapshot.h>
+#include <cheats.h>
 #ifndef SNES9X_VERSION_1_4
 #include <apu/apu.h>
 #include <controls.h>
@@ -12,99 +15,35 @@
 #include <apu.h>
 #include <soundux.h>
 #endif
-#include <memmap.h>
-#include <snapshot.h>
-#include <cheats.h>
 
-const char *creditsViewStr = CREDITS_INFO_STRING "(c) 2011-2014\nRobert Broglia\nwww.explusalpha.com\n\n(c) 1996-2011 the\nSnes9x Team\nwww.snes9x.com";
-
-#ifndef SNES9X_VERSION_1_4
-
-static const int SNES_AUTO_INPUT = 255;
-static const int SNES_JOYPAD = CTL_JOYPAD;
-static const int SNES_MOUSE_SWAPPED = CTL_MOUSE;
-static const int SNES_SUPERSCOPE = CTL_SUPERSCOPE;
-static int snesInputPort = SNES_AUTO_INPUT;
-static int snesActiveInputPort = SNES_JOYPAD;
-
-#else
-
-static int snesInputPort = SNES_JOYPAD;
-static const int &snesActiveInputPort = snesInputPort;
-
-#endif
-
-// controls
-
-enum
-{
-	s9xKeyIdxUp = EmuControls::systemKeyMapStart,
-	s9xKeyIdxRight,
-	s9xKeyIdxDown,
-	s9xKeyIdxLeft,
-	s9xKeyIdxLeftUp,
-	s9xKeyIdxRightUp,
-	s9xKeyIdxRightDown,
-	s9xKeyIdxLeftDown,
-	s9xKeyIdxSelect,
-	s9xKeyIdxStart,
-	s9xKeyIdxA,
-	s9xKeyIdxB,
-	s9xKeyIdxX,
-	s9xKeyIdxY,
-	s9xKeyIdxL,
-	s9xKeyIdxR,
-	s9xKeyIdxATurbo,
-	s9xKeyIdxBTurbo,
-	s9xKeyIdxXTurbo,
-	s9xKeyIdxYTurbo
-};
-
-enum {
-	CFGKEY_MULTITAP = 276, CFGKEY_BLOCK_INVALID_VRAM_ACCESS = 277
-};
-
-static Byte1Option optionMultitap(CFGKEY_MULTITAP, 0);
-#ifndef SNES9X_VERSION_1_4
-static Byte1Option optionBlockInvalidVRAMAccess(CFGKEY_BLOCK_INVALID_VRAM_ACCESS, 1);
-#endif
-
-#include <emuframework/CommonGui.hh>
-#include <emuframework/CommonCheatGui.hh>
-
-const char *EmuSystem::inputFaceBtnName = "A/B/X/Y";
-const char *EmuSystem::inputCenterBtnName = "Select/Start";
-const uint EmuSystem::inputFaceBtns = 6;
-const uint EmuSystem::inputCenterBtns = 2;
-const bool EmuSystem::inputHasTriggerBtns = true;
-const bool EmuSystem::inputHasRevBtnLayout = false;
-#ifdef SNES9X_VERSION_1_4
-const char *EmuSystem::configFilename = "Snes9x.config";
-#else
-bool EmuSystem::hasBundledGames = true;
-const char *EmuSystem::configFilename = "Snes9xP.config";
-#endif
-const uint EmuSystem::maxPlayers = 5;
-const AspectRatioInfo EmuSystem::aspectRatioInfo[] =
-{
-		{"4:3 (Original)", 4, 3},
-		{"8:7", 8, 7},
-		EMU_SYSTEM_DEFAULT_ASPECT_RATIO_INFO_INIT
-};
-const uint EmuSystem::aspectRatioInfos = sizeofArray(EmuSystem::aspectRatioInfo);
+const char *EmuSystem::creditsViewStr = CREDITS_INFO_STRING "(c) 2011-2014\nRobert Broglia\nwww.explusalpha.com\n\n(c) 1996-2011 the\nSnes9x Team\nwww.snes9x.com";
+static constexpr auto pixFmt = IG::PIXEL_FMT_RGB565;
+static bool renderToScreen = false;
+static const uint heightChangeFrameDelay = 4;
+static uint heightChangeFrames = heightChangeFrameDelay;
+bool EmuSystem::hasCheats = true;
+bool EmuSystem::hasPALVideoSystem = true;
 bool EmuSystem::hasResetModes = true;
-
-#if defined __ANDROID__ || defined CONFIG_MACHINE_PANDORA
-#define GAME_ASSET_EXT "smc"
-#else
-#define GAME_ASSET_EXT "zip"
+#ifdef SNES9X_VERSION_1_4
+static uint audioFramesPerUpdate = 0;
 #endif
+
+EmuSystem::NameFilterFunc EmuSystem::defaultFsFilter =
+	[](const char *name)
+	{
+		return string_hasDotExtension(name, "smc") ||
+				string_hasDotExtension(name, "sfc") ||
+				string_hasDotExtension(name, "fig") ||
+				string_hasDotExtension(name, "mgd") ||
+				string_hasDotExtension(name, "bs");
+	};
+EmuSystem::NameFilterFunc EmuSystem::defaultBenchmarkFsFilter = defaultFsFilter;
 
 const BundledGameInfo &EmuSystem::bundledGameInfo(uint idx)
 {
 	static const BundledGameInfo info[]
 	{
-		{ "Bio Worm", "Bio Worm." GAME_ASSET_EXT	}
+		{"Bio Worm", "Bio Worm.7z"}
 	};
 
 	return info[0];
@@ -120,226 +59,31 @@ const char *EmuSystem::systemName()
 	return "Super Famicom (SNES)";
 }
 
-void EmuSystem::initOptions()
-{
-	#ifdef CONFIG_VCONTROLS_GAMEPAD
-	optionTouchCtrlSize.initDefault(700);
-	optionTouchCtrlBtnSpace.initDefault(100);
-	optionTouchCtrlBtnStagger.initDefault(5); // original SNES layout
-	#endif
-}
-
-void EmuSystem::onOptionsLoaded()
-{
-	#ifndef SNES9X_VERSION_1_4
-	Settings.BlockInvalidVRAMAccessMaster = optionBlockInvalidVRAMAccess;
-	#endif
-}
-
-bool EmuSystem::readConfig(IO &io, uint key, uint readSize)
-{
-	switch(key)
-	{
-		default: return 0;
-		bcase CFGKEY_MULTITAP: optionMultitap.readFromIO(io, readSize);
-		#ifndef SNES9X_VERSION_1_4
-		bcase CFGKEY_BLOCK_INVALID_VRAM_ACCESS: optionBlockInvalidVRAMAccess.readFromIO(io, readSize);
-		#endif
-	}
-	return 1;
-}
-
-void EmuSystem::writeConfig(IO &io)
-{
-	optionMultitap.writeWithKeyIfNotDefault(io);
-	#ifndef SNES9X_VERSION_1_4
-	optionBlockInvalidVRAMAccess.writeWithKeyIfNotDefault(io);
-	#endif
-}
-
-static bool hasSNESExtension(const char *name)
-{
-	return string_hasDotExtension(name, "smc") ||
-			string_hasDotExtension(name, "sfc") ||
-			string_hasDotExtension(name, "fig");
-}
-
-EmuNameFilterFunc EmuFilePicker::defaultFsFilter = hasSNESExtension;
-EmuNameFilterFunc EmuFilePicker::defaultBenchmarkFsFilter = hasSNESExtension;
-
-static constexpr auto pixFmt = IG::PIXEL_FMT_RGB565;
-
-static int snesPointerX = 0, snesPointerY = 0, snesPointerBtns = 0, snesMouseClick = 0;
-
-CLINK bool8 S9xReadMousePosition(int which, int &x, int &y, uint32 &buttons)
-{
-    if (which == 1)
-    	return 0;
-
-    //logMsg("reading mouse %d: %d %d %d, prev %d %d", which1_0_to_1, snesPointerX, snesPointerY, snesPointerBtns, IPPU.PrevMouseX[which1_0_to_1], IPPU.PrevMouseY[which1_0_to_1]);
-    x = IG::scalePointRange((float)snesPointerX, (float)emuVideoLayer.gameRect().xSize(), (float)256.);
-    y = IG::scalePointRange((float)snesPointerY, (float)emuVideoLayer.gameRect().ySize(), (float)224.);
-    buttons = snesPointerBtns;
-
-    if(snesMouseClick)
-    	snesMouseClick--;
-    if(snesMouseClick == 1)
-    {
-    	//logDMsg("ending click");
-    	snesPointerBtns = 0;
-    }
-
-    return 1;
-}
-
-CLINK bool8 S9xReadSuperScopePosition(int &x, int &y, uint32 &buttons)
-{
-	//logMsg("reading super scope: %d %d %d", snesPointerX, snesPointerY, snesPointerBtns);
-	x = snesPointerX;
-	y = snesPointerY;
-	buttons = snesPointerBtns;
-	return 1;
-}
-
-#ifndef SNES9X_VERSION_1_4
-uint16 *S9xGetJoypadBits(uint idx);
-uint8 *S9xGetMouseBits(uint idx);
-uint8 *S9xGetMouseDeltaBits(uint idx);
-int16 *S9xGetMousePosBits(uint idx);
-int16 *S9xGetSuperscopePosBits();
-uint8 *S9xGetSuperscopeBits();
-#else
-static uint16 joypadData[5];
-static uint16 *S9xGetJoypadBits(uint idx)
-{
-	return &joypadData[idx];
-}
-
-CLINK uint32 S9xReadJoypad(int which)
-{
-	assert(which < 5);
-	//logMsg("reading joypad %d", which);
-	return 0x80000000 | joypadData[which];
-}
-
-bool JustifierOffscreen()
-{
-	return false;
-}
-
-void JustifierButtons(uint32& justifiers) { }
-
-static bool usingMouse() { return IPPU.Controller == SNES_MOUSE_SWAPPED; }
-static bool usingGun() { return IPPU.Controller == SNES_SUPERSCOPE; }
-
-#endif
-
-static uint doubleClickFrames, rightClickFrames;
-static ContentDrag mouseScroll;
-
-void updateVControllerMapping(uint player, SysVController::Map &map)
-{
-	uint playerMask = player << 29;
-	map[SysVController::F_ELEM] = SNES_A_MASK | playerMask;
-	map[SysVController::F_ELEM+1] = SNES_B_MASK | playerMask;
-	map[SysVController::F_ELEM+2] = SNES_X_MASK | playerMask;
-	map[SysVController::F_ELEM+3] = SNES_Y_MASK | playerMask;
-	map[SysVController::F_ELEM+4] = SNES_TL_MASK | playerMask;
-	map[SysVController::F_ELEM+5] = SNES_TR_MASK | playerMask;
-
-	map[SysVController::C_ELEM] = SNES_SELECT_MASK | playerMask;
-	map[SysVController::C_ELEM+1] = SNES_START_MASK | playerMask;
-
-	map[SysVController::D_ELEM] = SNES_UP_MASK | SNES_LEFT_MASK | playerMask;
-	map[SysVController::D_ELEM+1] = SNES_UP_MASK | playerMask;
-	map[SysVController::D_ELEM+2] = SNES_UP_MASK | SNES_RIGHT_MASK | playerMask;
-	map[SysVController::D_ELEM+3] = SNES_LEFT_MASK | playerMask;
-	map[SysVController::D_ELEM+5] = SNES_RIGHT_MASK | playerMask;
-	map[SysVController::D_ELEM+6] = SNES_DOWN_MASK | SNES_LEFT_MASK | playerMask;
-	map[SysVController::D_ELEM+7] = SNES_DOWN_MASK | playerMask;
-	map[SysVController::D_ELEM+8] = SNES_DOWN_MASK | SNES_RIGHT_MASK | playerMask;
-}
-
-uint EmuSystem::translateInputAction(uint input, bool &turbo)
-{
-	turbo = 0;
-	assert(input >= s9xKeyIdxUp);
-	uint player = (input - s9xKeyIdxUp) / EmuControls::gamepadKeys;
-	uint playerMask = player << 29;
-	input -= EmuControls::gamepadKeys * player;
-	switch(input)
-	{
-		case s9xKeyIdxUp: return SNES_UP_MASK | playerMask;
-		case s9xKeyIdxRight: return SNES_RIGHT_MASK | playerMask;
-		case s9xKeyIdxDown: return SNES_DOWN_MASK | playerMask;
-		case s9xKeyIdxLeft: return SNES_LEFT_MASK | playerMask;
-		case s9xKeyIdxLeftUp: return SNES_LEFT_MASK | SNES_UP_MASK | playerMask;
-		case s9xKeyIdxRightUp: return SNES_RIGHT_MASK | SNES_UP_MASK | playerMask;
-		case s9xKeyIdxRightDown: return SNES_RIGHT_MASK | SNES_DOWN_MASK | playerMask;
-		case s9xKeyIdxLeftDown: return SNES_LEFT_MASK | SNES_DOWN_MASK | playerMask;
-		case s9xKeyIdxSelect: return SNES_SELECT_MASK | playerMask;
-		case s9xKeyIdxStart: return SNES_START_MASK | playerMask;
-		case s9xKeyIdxXTurbo: turbo = 1;
-		case s9xKeyIdxX: return SNES_X_MASK | playerMask;
-		case s9xKeyIdxYTurbo: turbo = 1;
-		case s9xKeyIdxY: return SNES_Y_MASK | playerMask;
-		case s9xKeyIdxATurbo: turbo = 1;
-		case s9xKeyIdxA: return SNES_A_MASK | playerMask;
-		case s9xKeyIdxBTurbo: turbo = 1;
-		case s9xKeyIdxB: return SNES_B_MASK | playerMask;
-		case s9xKeyIdxL: return SNES_TL_MASK | playerMask;
-		case s9xKeyIdxR: return SNES_TR_MASK | playerMask;
-		default: bug_branch("%d", input);
-	}
-	return 0;
-}
-
-void EmuSystem::handleInputAction(uint state, uint emuKey)
-{
-	uint player = emuKey >> 29; // player is encoded in upper 3 bits of input code
-	assert(player < maxPlayers);
-	auto padData = S9xGetJoypadBits(player);
-	if(state == Input::PUSHED)
-		setBits(*padData, emuKey & 0xFFFF);
-	else
-		unsetBits(*padData, emuKey & 0xFFFF);
-}
-
-static int snesResX = 256, snesResY = 224;
-
-static bool renderToScreen = 0;
-
 #ifndef SNES9X_VERSION_1_4
 bool8 S9xDeinitUpdate (int width, int height)
 #else
 bool8 S9xDeinitUpdate(int width, int height, bool8)
 #endif
 {
-	if(likely(renderToScreen))
+	if(unlikely(height == 239 && emuVideo.vidPix.h() == 224 && heightChangeFrames))
 	{
-		if(unlikely(snesResX != width || snesResY != height))
-		{
-			if(snesResX == width && snesResY < 240 && height < 240)
-			{
-				//logMsg("ignoring vertical screen res change for now");
-			}
-			else
-			{
-				logMsg("resolution changed to %d,%d", width, height);
-				snesResX = width;
-				snesResY = height;
-				emuVideo.resizeImage(snesResX, snesResY);
-			}
-		}
-
-		updateAndDrawEmuVideo();
-		renderToScreen = 0;
+		// ignore rapid 224 -> 239 -> 224 height changes
+		//logMsg("skipped height change");
+		heightChangeFrames--;
+		height = 224;
 	}
 	else
 	{
-		//logMsg("skipping render");
+		heightChangeFrames = heightChangeFrameDelay;
 	}
-
+	emuVideo.initImage(false, width, height);
+	IG::Pixmap srcPix = {{{width, height}, pixFmt}, GFX.Screen};
+	emuVideo.writeFrame(srcPix);
+	if(likely(renderToScreen))
+	{
+		updateAndDrawEmuVideo();
+		renderToScreen = false;
+	}
 	return 1;
 }
 
@@ -367,9 +111,9 @@ static char saveSlotChar(int slot)
 }
 
 #ifndef SNES9X_VERSION_1_4
-	#define FREEZE_EXT "frz"
+#define FREEZE_EXT "frz"
 #else
-	#define FREEZE_EXT "s96"
+#define FREEZE_EXT "s96"
 #endif
 
 FS::PathString EmuSystem::sprintStateFilename(int slot, const char *statePath, const char *gameName)
@@ -389,17 +133,17 @@ static FS::PathString sprintCheatsFilename()
 	return FS::makePathStringPrintf("%s/%s.cht", EmuSystem::savePath(), EmuSystem::gameName().data());
 }
 
-int EmuSystem::saveState()
+std::error_code EmuSystem::saveState()
 {
 	auto saveStr = sprintStateFilename(saveStateSlot);
 	fixFilePermissions(saveStr);
 	if(!S9xFreezeGame(saveStr.data()))
-		return STATE_RESULT_IO_ERROR;
+		return {EIO, std::system_category()};
 	else
-		return STATE_RESULT_OK;
+		return {};
 }
 
-int EmuSystem::loadState(int saveStateSlot)
+std::system_error EmuSystem::loadState(int saveStateSlot)
 {
 	auto saveStr = sprintStateFilename(saveStateSlot);
 	if(FS::exists(saveStr.data()))
@@ -408,12 +152,12 @@ int EmuSystem::loadState(int saveStateSlot)
 		if(S9xUnfreezeGame(saveStr.data()))
 		{
 			IPPU.RenderThisFrame = TRUE;
-			return STATE_RESULT_OK;
+			return {{}};
 		}
 		else
-			return STATE_RESULT_IO_ERROR;
+			return {{EIO, std::system_category()}};
 	}
-	return STATE_RESULT_NO_FILE;
+	return {{ENOENT, std::system_category()}};
 }
 
 void EmuSystem::saveBackupMem() // for manually saving when not closing game
@@ -457,150 +201,13 @@ void EmuSystem::closeSystem()
 	saveBackupMem();
 }
 
-bool EmuSystem::vidSysIsPAL() { return 0; }
+bool EmuSystem::vidSysIsPAL() { return Settings.PAL; }
 uint EmuSystem::multiresVideoBaseX() { return 256; }
 uint EmuSystem::multiresVideoBaseY() { return 239; }
-bool touchControlsApplicable() { return snesActiveInputPort == SNES_JOYPAD; }
-
-static void setupSNESInput()
-{
-	#ifndef SNES9X_VERSION_1_4
-	int inputSetup = snesInputPort;
-	if(inputSetup == SNES_AUTO_INPUT)
-	{
-		inputSetup = SNES_JOYPAD;
-		if(EmuSystem::gameIsRunning() && !strncmp((const char *) Memory.NSRTHeader + 24, "NSRT", 4))
-		{
-			switch (Memory.NSRTHeader[29])
-			{
-				case 0x00:	// Everything goes
-				break;
-
-				case 0x10:	// Mouse in Port 0
-				inputSetup = SNES_MOUSE_SWAPPED;
-				break;
-
-				case 0x01:	// Mouse in Port 1
-				inputSetup = SNES_MOUSE_SWAPPED;
-				break;
-
-				case 0x03:	// Super Scope in Port 1
-				inputSetup = SNES_SUPERSCOPE;
-				break;
-
-				case 0x06:	// Multitap in Port 1
-				//S9xSetController(1, CTL_MP5,        1, 2, 3, 4);
-				break;
-
-				case 0x66:	// Multitap in Ports 0 and 1
-				//S9xSetController(0, CTL_MP5,        0, 1, 2, 3);
-				//S9xSetController(1, CTL_MP5,        4, 5, 6, 7);
-				break;
-
-				case 0x08:	// Multitap in Port 1, Mouse in new Port 1
-				inputSetup = SNES_MOUSE_SWAPPED;
-				break;
-
-				case 0x04:	// Pad or Super Scope in Port 1
-				inputSetup = SNES_SUPERSCOPE;
-				break;
-
-				case 0x05:	// Justifier - Must ask user...
-				//S9xSetController(1, CTL_JUSTIFIER,  1, 0, 0, 0);
-				break;
-
-				case 0x20:	// Pad or Mouse in Port 0
-				inputSetup = SNES_MOUSE_SWAPPED;
-				break;
-
-				case 0x22:	// Pad or Mouse in Port 0 & 1
-				inputSetup = SNES_MOUSE_SWAPPED;
-				break;
-
-				case 0x24:	// Pad or Mouse in Port 0, Pad or Super Scope in Port 1
-				// There should be a toggles here for what to put in, I'm leaving it at gamepad for now
-				break;
-
-				case 0x27:	// Pad or Mouse in Port 0, Pad or Mouse or Super Scope in Port 1
-				// There should be a toggles here for what to put in, I'm leaving it at gamepad for now
-				break;
-
-				// Not Supported yet
-				case 0x99:	// Lasabirdie
-				break;
-
-				case 0x0A:	// Barcode Battler
-				break;
-			}
-		}
-		if(inputSetup != SNES_JOYPAD)
-			logMsg("using automatic input %d", inputSetup);
-	}
-
-	if(inputSetup == SNES_MOUSE_SWAPPED)
-	{
-		S9xSetController(0, CTL_MOUSE, 0, 0, 0, 0);
-		S9xSetController(1, CTL_JOYPAD, 1, 0, 0, 0);
-		logMsg("setting mouse input");
-	}
-	else if(inputSetup == SNES_SUPERSCOPE)
-	{
-		S9xSetController(0, CTL_JOYPAD, 0, 0, 0, 0);
-		S9xSetController(1, CTL_SUPERSCOPE, 0, 0, 0, 0);
-		logMsg("setting superscope input");
-	}
-	else // Joypad
-	{
-		if(optionMultitap)
-		{
-			S9xSetController(0, CTL_JOYPAD, 0, 0, 0, 0);
-			S9xSetController(1, CTL_MP5, 1, 2, 3, 4);
-			logMsg("setting 5-player joypad input");
-		}
-		else
-		{
-			S9xSetController(0, CTL_JOYPAD, 0, 0, 0, 0);
-			S9xSetController(1, CTL_JOYPAD, 1, 0, 0, 0);
-		}
-	}
-	snesActiveInputPort = inputSetup;
-	#else
-	Settings.MultiPlayer5Master = Settings.MultiPlayer5 = 0;
-	Settings.MouseMaster = Settings.Mouse = 0;
-	Settings.SuperScopeMaster = Settings.SuperScope = 0;
-	Settings.Justifier = Settings.SecondJustifier = 0;
-	if(snesInputPort == SNES_JOYPAD && optionMultitap)
-	{
-		logMsg("connected multitap");
-		Settings.MultiPlayer5Master = Settings.MultiPlayer5 = 1;
-		Settings.ControllerOption = IPPU.Controller = SNES_MULTIPLAYER5;
-	}
-	else
-	{
-		if(snesInputPort == SNES_MOUSE_SWAPPED)
-		{
-			logMsg("connected mouse");
-			Settings.MouseMaster = Settings.Mouse = 1;
-			Settings.ControllerOption = IPPU.Controller = SNES_MOUSE_SWAPPED;
-		}
-		else if(snesInputPort == SNES_SUPERSCOPE)
-		{
-			logMsg("connected superscope");
-			Settings.SuperScopeMaster = Settings.SuperScope = 1;
-			Settings.ControllerOption = IPPU.Controller = SNES_SUPERSCOPE;
-		}
-		else
-		{
-			logMsg("connected joypads");
-			IPPU.Controller = SNES_JOYPAD;
-		}
-	}
-	#endif
-}
 
 static int loadGameCommon()
 {
-	emuVideo.initImage(0, snesResX, snesResY);
+	emuVideo.initImage(false, 256, 224);
 	setupSNESInput();
 
 	auto saveStr = sprintSRAMFilename();
@@ -625,14 +232,21 @@ int EmuSystem::loadGameFromIO(IO &io, const char *path, const char *origFilename
 	auto size = io.size();
 	if(size > CMemory::MAX_ROM_SIZE)
 	{
-		//popup.postError("ROM size is too big");
+		popup.postError("ROM is too large");
     return 0;
 	}
 	#ifndef SNES9X_VERSION_1_4
-	mem_zero(Memory.NSRTHeader);
+	IG::fillData(Memory.NSRTHeader);
 	#endif
 	Memory.HeaderCount = 0;
 	string_copy(Memory.ROMFilename, path);
+	Settings.ForceNTSC = Settings.ForcePAL = 0;
+	switch(optionVideoSystem.val)
+	{
+		bcase 1: Settings.ForceNTSC = 1;
+		bcase 2: Settings.ForcePAL = 1;
+		bcase 3: Settings.ForceNTSC = Settings.ForcePAL = 1;
+	}
 	bool success;
 	if(io.mmapConst())
 	{
@@ -640,15 +254,13 @@ int EmuSystem::loadGameFromIO(IO &io, const char *path, const char *origFilename
 	}
 	else
 	{
-		auto dataPtr = (uint8*)mem_alloc(size);
-		if(!io.read(dataPtr, size))
+		auto data = std::make_unique<uint8[]>(size);
+		if(!io.read(data.get(), size))
 		{
-			mem_free(dataPtr);
 			popup.postError("IO Error loading game");
 			return 0;
 		}
-		success = Memory.LoadROMMem(dataPtr, size);
-		mem_free(dataPtr);
+		success = Memory.LoadROMMem(data.get(), size);
 	}
 	if(!success)
 	{
@@ -658,30 +270,26 @@ int EmuSystem::loadGameFromIO(IO &io, const char *path, const char *origFilename
 	return loadGameCommon();
 }
 
-void EmuSystem::clearInputBuffers()
-{
-	iterateTimes((uint)maxPlayers, p)
-	{
-		*S9xGetJoypadBits(p) = 0;
-	}
-	snesPointerBtns = 0;
-	doubleClickFrames = 0;
-	mouseScroll = ContentDrag{ContentDrag::XY_AXIS};
-	mouseScroll.dragStartY = std::max(1, mainWin.win.heightMMInPixels(1.));
-	mouseScroll.dragStartX = std::max(1, mainWin.win.widthMMInPixels(1.));
-}
-
 void EmuSystem::configAudioRate(double frameTime)
 {
 	pcmFormat.rate = optionSoundRate;
-	double systemFrameRate = 59.97;
+	#ifndef SNES9X_VERSION_1_4
+	const double rateScaler = (32000./32040.5);
+	const double ntscFrameRate = rateScaler * (21477272. / 357366.);
+	const double palFrameRate = rateScaler * (21281370. / 425568.);
+	#else
+	const double ntscFrameRate = (21477272. / 357366.);
+	const double palFrameRate = (21281370. / 425568.);
+	#endif
+	double systemFrameRate = vidSysIsPAL() ? palFrameRate : ntscFrameRate;
 	Settings.SoundPlaybackRate = std::round(optionSoundRate * (systemFrameRate * frameTime));
 	#ifndef SNES9X_VERSION_1_4
 	S9xUpdatePlaybackRate();
 	#else
+	audioFramesPerUpdate = std::round(pcmFormat.rate * frameTime);
 	S9xSetPlaybackRate(Settings.SoundPlaybackRate);
 	#endif
-	logMsg("emu sound rate %d", Settings.SoundPlaybackRate);
+	logMsg("sound rate:%d from system frame rate:%f", Settings.SoundPlaybackRate, systemFrameRate);
 }
 
 static void mixSamples(int frames, bool renderAudio)
@@ -742,13 +350,9 @@ void EmuSystem::runFrame(bool renderGfx, bool processGfx, bool renderAudio)
 	S9xMainLoop();
 	// video rendered in S9xDeinitUpdate
 	#ifdef SNES9X_VERSION_1_4
-	mixSamples(audioFramesPerVideoFrame, renderAudio);
+	mixSamples(audioFramesPerUpdate, renderAudio);
 	#endif
 }
-
-void EmuSystem::savePathChanged() { }
-
-bool EmuSystem::hasInputOptions() { return true; }
 
 void EmuSystem::onCustomizeNavView(EmuNavView &view)
 {
@@ -812,11 +416,8 @@ void EmuSystem::onMainWindowCreated(Base::Window &win)
 
 					bcase SNES_MOUSE_SWAPPED:
 					{
-						auto dragState = Input::dragState(e.devId);
-						static bool dragWithButton = 0; // true to start next mouse drag with a button held
-						switch(mouseScroll.inputEvent(win.contentBounds(), e))
-						{
-							bcase ContentDrag::PUSHED:
+						dragTracker.inputEvent(e,
+							[&](Input::DragTrackerState)
 							{
 								rightClickFrames = 15;
 								if(doubleClickFrames) // check if in double-click time window
@@ -828,61 +429,63 @@ void EmuSystem::onMainWindowCreated(Base::Window &win)
 									dragWithButton = 0;
 									doubleClickFrames = 15;
 								}
-							}
-
-							bcase ContentDrag::ENTERED_ACTIVE:
+							},
+							[&](Input::DragTrackerState state, Input::DragTrackerState prevState)
 							{
-								if(dragWithButton)
+								if(!state.isDragging())
+									return;
+								if(!prevState.isDragging())
 								{
-									snesMouseClick = 0;
-									if(!rightClickFrames)
+									if(dragWithButton)
 									{
-										// in right-click time window
-										snesPointerBtns = 2;
-										logMsg("started drag with right-button");
+										snesMouseClick = 0;
+										if(!rightClickFrames)
+										{
+											// in right-click time window
+											snesPointerBtns = 2;
+											logMsg("started drag with right-button");
+										}
+										else
+										{
+											snesPointerBtns = 1;
+											logMsg("started drag with left-button");
+										}
 									}
 									else
 									{
-										snesPointerBtns = 1;
-										logMsg("started drag with left-button");
+										logMsg("started drag");
 									}
 								}
 								else
 								{
-									logMsg("started drag");
+									auto relPos = state.pos() - prevState.pos();
+									snesPointerX += relPos.x;
+									snesPointerY += relPos.y;
 								}
-							}
-
-							bcase ContentDrag::LEFT_ACTIVE:
+							},
+							[&](Input::DragTrackerState state)
 							{
-								logMsg("stopped drag");
-								snesPointerBtns = 0;
-							}
-
-							bcase ContentDrag::ACTIVE:
-							{
-								snesPointerX += dragState->relX();
-								snesPointerY += dragState->relY();
-							}
-
-							bcase ContentDrag::RELEASED:
-							{
-								if(!rightClickFrames)
+								if(state.isDragging())
 								{
-									logMsg("right clicking mouse");
-									snesPointerBtns = 2;
-									doubleClickFrames = 15; // allow extra time for a right-click & drag
+									logMsg("stopped drag");
+									snesPointerBtns = 0;
 								}
 								else
 								{
-									logMsg("left clicking mouse");
-									snesPointerBtns = 1;
+									if(!rightClickFrames)
+									{
+										logMsg("right clicking mouse");
+										snesPointerBtns = 2;
+										doubleClickFrames = 15; // allow extra time for a right-click & drag
+									}
+									else
+									{
+										logMsg("left clicking mouse");
+										snesPointerBtns = 1;
+									}
+									snesMouseClick = 3;
 								}
-								snesMouseClick = 3;
-							}
-
-							bdefault: break;
-						}
+							});
 					}
 				}
 			}
@@ -892,27 +495,24 @@ void EmuSystem::onMainWindowCreated(Base::Window &win)
 
 CallResult EmuSystem::onInit()
 {
+	emuVideo.initFormat(pixFmt);
 	static uint16 screenBuff[512*478] __attribute__ ((aligned (8)));
 	#ifndef SNES9X_VERSION_1_4
 	GFX.Screen = screenBuff;
 	#else
 	GFX.Screen = (uint8*)screenBuff;
 	#endif
-
 	Memory.Init();
 	S9xGraphicsInit();
 	S9xInitAPU();
 	assert(Settings.Stereo == TRUE);
 	#ifndef SNES9X_VERSION_1_4
-	S9xInitSound(20, 0);
+	S9xInitSound(16, 0);
 	S9xUnmapAllControls();
 	#else
 	S9xInitSound(Settings.SoundPlaybackRate, Settings.Stereo, 0);
-	assert(Settings.FrameTime == Settings.FrameTimeNTSC);
 	assert(Settings.H_Max == SNES_CYCLES_PER_SCANLINE);
 	assert(Settings.HBlankStart == (256 * Settings.H_Max) / SNES_HCOUNTER_MAX);
 	#endif
-
-	emuVideo.initPixmap((char*)GFX.Screen, pixFmt, snesResX, snesResY);
 	return OK;
 }

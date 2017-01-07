@@ -15,12 +15,11 @@
 	You should have received a copy of the GNU General Public License
 	along with Imagine.  If not, see <http://www.gnu.org/licenses/> */
 
-#include <imagine/engine-globals.h>
+#include <imagine/config/defs.hh>
 #include <imagine/base/Base.hh>
 #include <imagine/base/Window.hh>
 #include <imagine/input/Input.hh>
-#include <imagine/input/DragPointer.hh>
-#include <imagine/resource/face/ResourceFace.hh>
+#include <imagine/gfx/GlyphTextureSet.hh>
 #include <imagine/gfx/ProjectionPlane.hh>
 
 class View;
@@ -37,15 +36,9 @@ public:
 
 class View
 {
-protected:
-	Base::Window *win{};
-	ViewController *controller{};
-	Gfx::ProjectionPlane projP{};
-
 public:
-	const char *name_ = "";
-	static ResourceFace *defaultFace;
-	static ResourceFace *defaultSmallFace;
+	static Gfx::GlyphTextureSet defaultFace;
+	static Gfx::GlyphTextureSet defaultBoldFace;
 	// Does the platform need an on-screen/pointer-based control to move to a previous view?
 	static bool needsBackControl;
 	static const bool needsBackControlDefault = !(Config::envIsPS3 || Config::envIsAndroid || (Config::envIsWebOS && !Config::envIsWebOS3));
@@ -56,7 +49,6 @@ public:
 	constexpr View(Base::Window &win): win(&win) {}
 	constexpr View(const char *name, Base::Window &win) : win(&win), name_(name) {}
 
-	virtual void deinit() = 0;
 	virtual IG::WindowRect &viewRect() = 0;
 	virtual void place() = 0;
 	virtual void draw() = 0;
@@ -70,6 +62,7 @@ public:
 	Base::Window &window();
 	Base::Screen *screen();
 	const char *name() { return name_; }
+	void setName(const char *name) { name_ = name; }
 	static void setNeedsBackControl(bool on);
 	static bool compileGfxPrograms();
 	void dismiss();
@@ -80,4 +73,11 @@ public:
 	void setWindow(Base::Window *w) { win = w; }
 	void setController(ViewController *c, Input::Event e);
 	Gfx::ProjectionPlane projection() { return projP; }
+	bool pointIsInView(IG::WP pos);
+
+protected:
+	Base::Window *win{};
+	ViewController *controller{};
+	Gfx::ProjectionPlane projP{};
+	const char *name_ = "";
 };

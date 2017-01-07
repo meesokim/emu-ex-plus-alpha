@@ -53,8 +53,8 @@ extern Byte1Option optionSoundBuffers;
 #define EMU_FRAMEWORK_STRICT_UNDERRUN_CHECK_OPTION
 extern OptionAudioHintStrictUnderrunCheck optionSoundUnderrunCheck;
 #endif
-#ifdef CONFIG_AUDIO_SOLO_MIX
-using OptionAudioSoloMix = Option<OptionMethodFunc<bool, Audio::soloMix, Audio::setSoloMix>, uint8>;
+#ifdef CONFIG_AUDIO_MANAGER_SOLO_MIX
+using OptionAudioSoloMix = Option<OptionMethodFunc<bool, AudioManager::soloMix, AudioManager::setSoloMix>, uint8>;
 extern OptionAudioSoloMix optionAudioSoloMix;
 #endif
 extern Byte4Option optionSoundRate;
@@ -81,6 +81,7 @@ extern Byte1Option optionMOGAInputSystem;
 
 #ifdef CONFIG_BLUETOOTH
 extern Byte1Option optionKeepBluetoothActive;
+extern Byte1Option optionShowBluetoothScan;
 	#ifdef CONFIG_BLUETOOTH_SCAN_CACHE_USAGE
 	extern OptionBlueToothScanCache optionBlueToothScanCache;
 	#endif
@@ -147,7 +148,7 @@ static constexpr uint8 OPTION_ANDROID_TEXTURE_STORAGE_MAX_VALUE = OPTION_ANDROID
 extern Byte1Option optionAndroidTextureStorage;
 Gfx::Texture::AndroidStorageImpl makeAndroidStorageImpl(uint8 val);
 extern SByte1Option optionProcessPriority;
-extern Byte1Option optionManageCPUFreq;
+extern Byte1Option optionFakeUserActivity;
 #endif
 
 extern Byte1Option optionDitherImage;
@@ -159,6 +160,7 @@ extern Byte1Option optionWindowPixelFormat;
 
 static const char *optionSavePathDefaultToken = ":DEFAULT:";
 extern PathOption optionSavePath;
+extern PathOption optionLastLoadPath;
 extern Byte1Option optionCheckSavePathWriteAccess;
 
 extern Byte1Option optionShowBundledGames;

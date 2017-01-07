@@ -15,11 +15,12 @@
 
 #include <imagine/base/Pipe.hh>
 #include <imagine/util/fd-utils.h>
+#include <cstring>
 
 namespace Base
 {
 
-void Pipe::init(Delegate del)
+void Pipe::init(EventLoop loop, Delegate del)
 {
 	if(msgPipe[0] != -1)
 	{
@@ -28,14 +29,16 @@ void Pipe::init(Delegate del)
 	}
 	int res = pipe(msgPipe);
 	assert(res == 0);
-	var_selfs(del);
-	fdSrc.init(msgPipe[0],
+	this->del = del;
+	if(!loop)
+		loop = EventLoop::forThread();
+	fdSrc = {msgPipe[0], loop,
 		[this](int fd, int events)
 		{
 			assert(this->del);
 			this->del(*this);
 			return 1;
-		});
+		}};
 	logMsg("init pipe with fd: %d %d", msgPipe[0], msgPipe[1]);
 }
 
@@ -43,7 +46,7 @@ void Pipe::deinit()
 {
 	if(msgPipe[0] != -1)
 	{
-		fdSrc.deinit();
+		fdSrc.removeFromEventLoop();
 		close(msgPipe[0]);
 		close(msgPipe[1]);
 		logMsg("deinit pipe with fd: %d %d", msgPipe[0], msgPipe[1]);

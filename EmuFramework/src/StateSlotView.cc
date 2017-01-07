@@ -16,10 +16,21 @@
 #include <emuframework/StateSlotView.hh>
 #include <emuframework/EmuApp.hh>
 
-void StateSlotView::init()
+StateSlotView::StateSlotView(Base::Window &win):
+	TableView
+	{
+		"State Slot",
+		win,
+		[this](const TableView &)
+		{
+			return stateSlots;
+		},
+		[this](const TableView &, uint idx) -> MenuItem&
+		{
+			return stateSlot[idx];
+		}
+	}
 {
-	uint i = 0;
-
 	for(int slot = -1; slot < 10; slot++)
 	{
 		auto idx = slot+1;
@@ -30,29 +41,29 @@ void StateSlotView::init()
 			bool fileExists = FS::exists(saveStr);
 			if(fileExists)
 			{
-				auto mTime = FS::status(saveStr).last_write_time_local();
+				auto mTime = FS::status(saveStr).lastWriteTimeLocal();
 				char dateStr[64]{};
 				std::strftime(dateStr, sizeof(dateStr), strftimeFormat, &mTime);
 				string_printf(stateStr[idx], "%s (%s)", stateNameStr(slot), dateStr);
 			}
 			else
 				string_printf(stateStr[idx], "%s", stateNameStr(slot));
-			stateSlot[idx].init(stateStr[idx], fileExists); item[i] = &stateSlot[idx]; i++;
+			stateSlot[idx] = {stateStr[idx], {}};
+			stateSlot[idx].setActive(fileExists);
 		}
 		else
 		{
 			string_printf(stateStr[idx], "%s", stateNameStr(slot));
-			stateSlot[idx].init(stateStr[idx], false); item[i] = &stateSlot[idx]; i++;
+			stateSlot[idx] = {stateStr[idx], {}};
+			stateSlot[idx].setActive(false);
 		}
 
-		stateSlot[idx].onSelect() =
+		stateSlot[idx].setOnSelect(
 			[slot](TextMenuItem &, View &view, Input::Event e)
 			{
 				EmuSystem::saveStateSlot = slot;
 				logMsg("set state slot %d", EmuSystem::saveStateSlot);
 				view.dismiss();
-			};
+			});
 	}
-	assert(i <= sizeofArray(item));
-	TableView::init(item, i);
 }

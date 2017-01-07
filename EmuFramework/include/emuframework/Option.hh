@@ -24,8 +24,6 @@
 #include <emuframework/EmuSystem.hh>
 #include <emuframework/Recent.hh>
 #include <imagine/audio/Audio.hh>
-#include <imagine/util/strings.h>
-#include <imagine/util/Rational.hh>
 #include <imagine/logger/logger.h>
 
 struct OptionBase
@@ -119,9 +117,9 @@ public:
 	bool writeToIO(IO &io)
 	{
 		logMsg("writing option key %u after size %u", KEY, ioSize());
-		CallResult r = OK;
-		io.writeVal(KEY, &r);
-		io.writeVal((SERIALIZED_T)V::get(), &r);
+		std::error_code ec{};
+		io.writeVal(KEY, &ec);
+		io.writeVal((SERIALIZED_T)V::get(), &ec);
 		return true;
 	}
 
@@ -129,8 +127,8 @@ public:
 	{
 		if(!isDefault())
 		{
-			CallResult r = OK;
-			io.writeVal((uint16)ioSize(), &r);
+			std::error_code ec{};
+			io.writeVal((uint16)ioSize(), &ec);
 			writeToIO(io);
 		}
 		return true;
@@ -147,9 +145,9 @@ public:
 			return false;
 		}
 
-		CallResult r = OK;
-		auto x = io.readVal<SERIALIZED_T>(&r);
-		if(r != OK)
+		std::error_code ec{};
+		auto x = io.readVal<SERIALIZED_T>(&ec);
+		if(ec)
 		{
 			logErr("error reading option from io");
 			return false;
@@ -200,10 +198,10 @@ struct PathOption : public OptionBase
 			logMsg("skipping 0 length option string");
 			return 0;
 		}
-		CallResult r = OK;
-		io.writeVal((uint16)(2 + len), &r);
-		io.writeVal((uint16)KEY, &r);
-		io.write(val, len, &r);
+		std::error_code ec{};
+		io.writeVal((uint16)(2 + len), &ec);
+		io.writeVal((uint16)KEY, &ec);
+		io.write(val, len, &ec);
 		return true;
 	}
 
@@ -294,7 +292,7 @@ enum { CFGKEY_SOUND = 0, CFGKEY_TOUCH_CONTROL_DISPLAY = 1,
 	CFGKEY_CHECK_SAVE_PATH_WRITE_ACCESS = 74, CFGKEY_IMAGE_EFFECT_PIXEL_FORMAT = 75,
 	CFGKEY_SKIP_LATE_FRAMES = 76, CFGKEY_FRAME_RATE = 77,
 	CFGKEY_FRAME_RATE_PAL = 78, CFGKEY_TIME_FRAMES_WITH_SCREEN_REFRESH = 79,
-	CFGKEY_MANAGE_CPU_FREQ = 80
+	CFGKEY_FAKE_USER_ACTIVITY = 80, CFGKEY_SHOW_BLUETOOTH_SCAN = 81
 	// 256+ is reserved
 };
 
@@ -309,11 +307,11 @@ struct OptionAspectRatio : public Option<OptionMethodVar<IG::Point2D<uint> > >
 
 	bool writeToIO(IO &io)
 	{
-		CallResult r = OK;
-		io.writeVal((uint16)CFGKEY_GAME_ASPECT_RATIO, &r);
+		std::error_code ec{};
+		io.writeVal((uint16)CFGKEY_GAME_ASPECT_RATIO, &ec);
 		logMsg("writing aspect ratio config %u:%u", val.x, val.y);
-		io.writeVal((uint8)val.x, &r);
-		io.writeVal((uint8)val.y, &r);
+		io.writeVal((uint8)val.x, &ec);
+		io.writeVal((uint8)val.y, &ec);
 		return true;
 	}
 
@@ -330,7 +328,7 @@ struct OptionAspectRatio : public Option<OptionMethodVar<IG::Point2D<uint> > >
 		logMsg("read aspect ratio config %u,%u", x, y);
 		if(y == 0)
 			y = 1;
-		val = Rational::make<uint>(x, y);
+		val = {x, y};
 		return true;
 	}
 };
@@ -343,60 +341,18 @@ struct OptionRecentGames : public OptionBase
 	bool writeToIO(IO &io)
 	{
 		logMsg("writing recent list");
-		CallResult r = OK;
-		io.writeVal(key, &r);
+		std::error_code ec{};
+		io.writeVal(key, &ec);
 		for(auto &e : recentGameList)
 		{
 			uint len = strlen(e.path.data());
-			io.writeVal((uint16)len, &r);
-			io.write(e.path.data(), len, &r);
+			io.writeVal((uint16)len, &ec);
+			io.write(e.path.data(), len, &ec);
 		}
 		return true;
 	}
 
-	bool readFromIO(IO &io, uint readSize_)
-	{
-		int readSize = readSize_;
-		while(readSize && !recentGameList.isFull())
-		{
-			if(readSize < 2)
-			{
-				logMsg("expected string length but only %d bytes left", readSize);
-				break;
-			}
-
-			auto len = io.readVal<uint16>();
-			readSize -= 2;
-
-			if(len > readSize)
-			{
-				logMsg("string length %d longer than %d bytes left", len, readSize);
-				break;
-			}
-
-			RecentGameInfo info;
-			auto bytesRead = io.read(info.path.data(), len);
-			if(bytesRead == -1)
-			{
-				logErr("error reading string option");
-				return true;
-			}
-			if(!bytesRead)
-				continue; // don't add empty paths
-			info.path[bytesRead] = 0;
-			readSize -= len;
-			string_copyUpToLastCharInstance(info.name.data(), FS::basename(info.path).data(), '.');
-			//logMsg("adding game to recent list: %s, name: %s", info.path, info.name);
-			recentGameList.push_back(info);
-		}
-
-		if(readSize)
-		{
-			logMsg("skipping excess %d bytes", readSize);
-		}
-
-		return true;
-	}
+	bool readFromIO(IO &io, uint readSize_);
 
 	uint ioSize()
 	{

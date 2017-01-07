@@ -26,6 +26,8 @@
 
 #include "vice.h"
 
+#ifdef __OS2__
+
 #define INCL_DOSPROFILE
 #define INCL_DOSPROCESS
 #define INCL_DOSSEMAPHORES
@@ -425,7 +427,7 @@ static void dart_close()
     DosReleaseMutexSem(hmtxOC);
 }
 
-/*
+#if 0
 static int dart_write(SWORD *pbuf, size_t nr)
 {
     /* The MCI_MIX_BUFFER structure is used for reading and writing data to
@@ -475,7 +477,8 @@ static int dart_write(SWORD *pbuf, size_t nr)
     DosReleaseMutexSem(hmtxSnd);
 
     return 0;
-}*/
+}
+#endif
 
 static int dart_write2(SWORD *pbuf, size_t nr)
 {
@@ -723,4 +726,6 @@ typedef struct_MCI_MIX_BUFFER {
 } MCI_MIX_BUFFER;
 
 typedef MCI_MIX_BUFFER *PMCI_MIX_BUFFER
+#endif
+
 #endif

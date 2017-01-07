@@ -3,6 +3,7 @@
  *
  * Written by
  *  Andreas Boose <viceteam@t-online.de>
+ *  Marco van den Heuvel <blackystardust68@yahoo.com>
  *
  * This file is part of VICE, the Versatile Commodore Emulator.
  * See README for copyright notice.
@@ -32,9 +33,11 @@
 #include "archdep.h"
 #include "cartridge.h"
 #include "crt.h"
+#include "log.h"
 #include "resources.h"
 #include "types.h"
 #include "c64cart.h"
+#include "zfile.h"
 
 #define CARTRIDGE_INCLUDE_PRIVATE_API
 #include "actionreplay.h"
@@ -51,6 +54,7 @@
 #include "delaep7x8.h"
 #include "diashowmaker.h"
 #include "dinamic.h"
+#include "easycalc.h"
 #include "easyflash.h"
 #include "epyxfastload.h"
 #include "exos.h"
@@ -63,6 +67,7 @@
 #include "freezemachine.h"
 #include "funplay.h"
 #include "gamekiller.h"
+#include "gmod2.h"
 #include "gs.h"
 #include "ide64.h"
 #include "isepic.h"
@@ -82,6 +87,7 @@
 #include "rexep256.h"
 #include "rexutility.h"
 #include "rgcd.h"
+#include "rrnetmk3.h"
 #include "ross.h"
 #include "silverrock128.h"
 #include "simonsbasic.h"
@@ -121,7 +127,7 @@ static FILE *crt_open(const char *filename, crt_header_t *header)
     DWORD skip;
     FILE *fd;
 
-    fd = fopen(filename, MODE_READ);
+    fd = zfile_fopen(filename, MODE_READ);
 
     if (fd == NULL) {
         return NULL;
@@ -129,18 +135,20 @@ static FILE *crt_open(const char *filename, crt_header_t *header)
 
     do {
         if (fread(crt_header, sizeof(crt_header), 1, fd) < 1) {
-            DBG(("CRT: could not read header\n"));
+            log_error(LOG_DEFAULT, "could not read CRT header.");
             break;
         }
 
         if (memcmp(crt_header, CRT_HEADER, 16)) {
-            DBG(("CRT: header invalid\n"));
+            log_error(LOG_DEFAULT, "CRT header invalid.");
             break;
         }
 
         skip = util_be_buf_to_dword(&crt_header[0x10]);
 
         if (skip < sizeof(crt_header)) {
+            log_error(LOG_DEFAULT, "CRT header size is wrong (is 0x%02x, expected 0x%02x).",
+                (unsigned int)skip, (unsigned int)sizeof(crt_header));
             break; /* invalid header size */
         }
         skip -= sizeof(crt_header); /* without header */
@@ -157,7 +165,7 @@ static FILE *crt_open(const char *filename, crt_header_t *header)
         return fd; /* Ok, exit */
     } while (0);
 
-    fclose(fd);
+    zfile_fclose(fd);
     return NULL; /* Fault */
 }
 /*
@@ -174,7 +182,7 @@ int crt_getid(const char *filename)
         return -1;
     }
 
-    fclose(fd);
+    zfile_fclose(fd);
 
     return header.type;
 }
@@ -368,6 +376,9 @@ int crt_attach(const char *filename, BYTE *rawcart)
         case CARTRIDGE_DINAMIC:
             rc = dinamic_crt_attach(fd, rawcart);
             break;
+        case CARTRIDGE_EASYCALC:
+            rc = easycalc_crt_attach(fd, rawcart);
+            break;
         case CARTRIDGE_EASYFLASH:
             rc = easyflash_crt_attach(fd, rawcart, filename);
             break;
@@ -403,6 +414,9 @@ int crt_attach(const char *filename, BYTE *rawcart)
             break;
         case CARTRIDGE_GAME_KILLER:
             rc = gamekiller_crt_attach(fd, rawcart);
+            break;
+        case CARTRIDGE_GMOD2:
+            rc = gmod2_crt_attach(fd, rawcart, filename);
             break;
         case CARTRIDGE_GS:
             rc = gs_crt_attach(fd, rawcart);
@@ -464,6 +478,11 @@ int crt_attach(const char *filename, BYTE *rawcart)
         case CARTRIDGE_RGCD:
             rc = rgcd_crt_attach(fd, rawcart);
             break;
+#ifdef HAVE_PCAP
+        case CARTRIDGE_RRNETMK3:
+            rc = rrnetmk3_crt_attach(fd, rawcart, filename);
+            break;
+#endif
         case CARTRIDGE_ROSS:
             rc = ross_crt_attach(fd, rawcart);
             break;
@@ -509,7 +528,7 @@ int crt_attach(const char *filename, BYTE *rawcart)
             break;
     }
 
-    fclose(fd);
+    zfile_fclose(fd);
 
     if (rc == -1) {
         DBG(("crt_attach error (%d)\n", rc));

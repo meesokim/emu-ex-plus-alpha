@@ -21,11 +21,11 @@
 
 IO::~IO() {}
 
-ssize_t IO::readAtPos(void *buff, size_t bytes, off_t offset, CallResult *resultOut)
+ssize_t IO::readAtPos(void *buff, size_t bytes, off_t offset, std::error_code *ecOut)
 {
 	auto savedOffset = tell();
 	seekS(offset);
-	auto bytesRead = read(buff, bytes, resultOut);
+	auto bytesRead = read(buff, bytes, ecOut);
 	seekS(savedOffset);
 	return bytesRead;
 }
@@ -41,14 +41,93 @@ GenericIO &GenericIO::operator=(GenericIO &&o)
 	return *this;
 }
 
-ssize_t GenericIO::read(void *buff, size_t bytes, CallResult *resultOut)
+FILE *GenericIO::moveToFileStream(const char *opentype)
 {
-	return io ? io->read(buff, bytes, resultOut) : (CallResult)BAD_STATE;
+	#if defined __ANDROID__ || __APPLE__
+	auto f = funopen(release(),
+		[](void *cookie, char *buf, int size)
+		{
+			auto &io = *(IO*)cookie;
+			return (int)io.read(buf, size);
+		},
+		[](void *cookie, const char *buf, int size)
+		{
+			auto &io = *(IO*)cookie;
+			return (int)io.write(buf, size);
+		},
+		[](void *cookie, fpos_t offset, int whence)
+		{
+			auto &io = *(IO*)cookie;
+			return (fpos_t)io.seek(offset, (IODefs::SeekMode)whence);
+		},
+		[](void *cookie)
+		{
+			delete (IO*)cookie;
+			return 0;
+		});
+	#else
+	cookie_io_functions_t funcs{};
+	funcs.read =
+		[](void *cookie, char *buf, size_t size)
+		{
+			auto &io = *(IO*)cookie;
+			return (ssize_t)io.read(buf, size);
+		};
+	funcs.write =
+		[](void *cookie, const char *buf, size_t size)
+		{
+			auto &io = *(IO*)cookie;
+			auto bytesWritten = io.write(buf, size);
+			if(bytesWritten == -1)
+			{
+				bytesWritten = 0; // needs to return 0 for error
+			}
+			return (ssize_t)bytesWritten;
+		};
+	funcs.seek =
+		[](void *cookie, off64_t *position, int whence)
+		{
+			auto &io = *(IO*)cookie;
+			auto newPos = io.seek(*position, (IODefs::SeekMode)whence);
+			if(newPos == -1)
+			{
+				return -1;
+			}
+			*position = newPos;
+			return 0;
+		};
+	funcs.close =
+		[](void *cookie)
+		{
+			delete (IO*)cookie;
+			return 0;
+		};
+	auto f = fopencookie(release(), opentype, funcs);
+	#endif
+	assert(f);
+	return f;
 }
 
-ssize_t GenericIO::readAtPos(void *buff, size_t bytes, off_t offset, CallResult *resultOut)
+ssize_t GenericIO::read(void *buff, size_t bytes, std::error_code *ecOut)
 {
-	return io ? io->readAtPos(buff, bytes, offset, resultOut) : (CallResult)BAD_STATE;
+	if(!io)
+	{
+		if(ecOut)
+			*ecOut = {EBADF, std::system_category()};
+		return -1;
+	}
+	return io->read(buff, bytes, ecOut);
+}
+
+ssize_t GenericIO::readAtPos(void *buff, size_t bytes, off_t offset, std::error_code *ecOut)
+{
+	if(!io)
+	{
+		if(ecOut)
+			*ecOut = {EBADF, std::system_category()};
+		return -1;
+	}
+	return io->readAtPos(buff, bytes, offset, ecOut);
 }
 
 const char *GenericIO::mmapConst()
@@ -56,26 +135,31 @@ const char *GenericIO::mmapConst()
 	return io ? io->mmapConst() : nullptr;
 }
 
-ssize_t GenericIO::write(const void *buff, size_t bytes, CallResult *resultOut)
+ssize_t GenericIO::write(const void *buff, size_t bytes, std::error_code *ecOut)
 {
-	return io ? io->write(buff, bytes, resultOut) : (CallResult)BAD_STATE;
-}
-
-CallResult GenericIO::truncate(off_t offset)
-{
-	return io ? io->truncate(offset) : (CallResult)BAD_STATE;
-}
-
-off_t GenericIO::seek(off_t offset, IO::SeekMode mode, CallResult *resultOut)
-{
-	if(io)
-		return io->seek(offset, mode, resultOut);
-	else
+	if(!io)
 	{
-		if(resultOut)
-			*resultOut = BAD_STATE;
+		if(ecOut)
+			*ecOut = {EBADF, std::system_category()};
 		return -1;
 	}
+	return io->write(buff, bytes, ecOut);
+}
+
+std::error_code GenericIO::truncate(off_t offset)
+{
+	return io ? io->truncate(offset) : std::error_code{EBADF, std::system_category()};
+}
+
+off_t GenericIO::seek(off_t offset, IO::SeekMode mode, std::error_code *ecOut)
+{
+	if(!io)
+	{
+		if(ecOut)
+			*ecOut = {EBADF, std::system_category()};
+		return -1;
+	}
+	return io->seek(offset, mode, ecOut);
 }
 
 void GenericIO::close()
@@ -122,15 +206,16 @@ AssetIO openAppAssetIO(const char *name)
 	return io;
 }
 
-CallResult writeToNewFile(const char *path, void *data, size_t size)
+std::error_code writeToNewFile(const char *path, void *data, size_t size)
 {
 	FileIO f;
-	auto r = f.create(path);
+	auto ec = f.create(path);
 	if(!f)
-		return r;
-	if(f.writeAll(data, size) != OK)
-		return WRITE_ERROR;
-	return OK;
+		return ec;
+	ec = f.writeAll(data, size);
+	if(ec)
+		return ec;
+	return {};
 }
 
 ssize_t readFromFile(const char *path, void *data, size_t size)
@@ -143,12 +228,12 @@ ssize_t readFromFile(const char *path, void *data, size_t size)
 	return readSize;
 }
 
-CallResult writeIOToNewFile(IO &io, const char *path)
+std::error_code writeIOToNewFile(IO &io, const char *path)
 {
 	FileIO file;
-	auto r = file.create(path);
-	if(r != OK)
-		return r;
+	auto ec = file.create(path);
+	if(ec)
+		return ec;
 	return io.writeToIO(file);
 }
 

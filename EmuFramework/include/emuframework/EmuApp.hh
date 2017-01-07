@@ -20,33 +20,24 @@
 #include <imagine/input/Input.hh>
 #include <imagine/gui/NavView.hh>
 #include <imagine/gui/ViewStack.hh>
-#include <imagine/fs/WorkDirStack.hh>
 #include <imagine/gfx/AnimatedViewport.hh>
 #include <emuframework/EmuSystem.hh>
 #include <emuframework/EmuView.hh>
 #include <emuframework/EmuVideo.hh>
 #include <emuframework/EmuVideoLayer.hh>
 #include <emuframework/MsgPopup.hh>
+#include <emuframework/FileUtils.hh>
 #include <emuframework/InputManagerView.hh>
 #ifdef CONFIG_EMUFRAMEWORK_VCONTROLS
-#include <emuframework/VController.hh>
 #include <emuframework/TouchConfigView.hh>
 #endif
 
 enum AssetID { ASSET_ARROW, ASSET_CLOSE, ASSET_ACCEPT, ASSET_GAME_ICON, ASSET_MENU, ASSET_FAST_FORWARD };
 
-class EmuNavView : public BasicNavView
-{
-public:
-	EmuNavView() {}
-	void onLeftNavBtn(Input::Event e) override;
-	void onRightNavBtn(Input::Event e) override;
-	void draw(const Base::Window &win, const Gfx::ProjectionPlane &projP) override;
-};
-
 struct AppWindowData
 {
 	Base::Window win{};
+	Gfx::Drawable drawable{};
 	Gfx::Viewport viewport() { return projectionPlane.viewport; }
 	Gfx::Mat4 projectionMat{};
 	Gfx::ProjectionPlane projectionPlane{};
@@ -56,9 +47,10 @@ struct AppWindowData
 	constexpr AppWindowData() {};
 };
 
+using OnMainMenuOptionChanged = DelegateFunc<void()>;
+
 extern AppWindowData mainWin, extraWin;
 extern AppWindowData *emuWin;
-extern EmuNavView viewNav;
 extern EmuVideo emuVideo;
 extern EmuVideoLayer emuVideoLayer;
 extern ViewStack viewStack;
@@ -70,11 +62,10 @@ extern bool menuViewIsActive;
 #ifdef CONFIG_EMUFRAMEWORK_VCONTROLS
 extern SysVController vController;
 #endif
-extern WorkDirStack<1> workDirStack;
 #ifdef __ANDROID__
-class RootCpufreqParamSetter;
-extern std::unique_ptr<RootCpufreqParamSetter> cpuFreq;
+extern std::unique_ptr<Base::UserActivityFaker> userActivityFaker;
 #endif
+extern FS::PathString lastLoadPath;
 
 Gfx::PixmapTexture &getAsset(AssetID assetID);
 Gfx::PixmapTexture *getCollectTextCloseAsset();
@@ -85,9 +76,6 @@ void startGameFromMenu();
 void restoreMenuFromGame();
 void closeGame(bool allowAutosaveState = true);
 void applyOSNavStyle(bool inGame);
-void initMainMenu(Base::Window &win);
-View &mainMenu();
-View *makeOptionCategoryMenu(Base::Window &win, uint idx);
 View *makeEditCheatListView(Base::Window &win);
 const char *appViewTitle();
 const char *appName();
@@ -97,5 +85,8 @@ void placeEmuViews();
 void placeElements();
 void startViewportAnimation(AppWindowData &winData);
 void updateAndDrawEmuVideo();
+void onMainMenuItemOptionChanged();
+void setOnMainMenuItemOptionChanged(OnMainMenuOptionChanged func);
+void setCPUNeedsLowLatency(bool needed);
 
 static constexpr const char *strftimeFormat = "%x  %r";

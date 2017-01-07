@@ -9,7 +9,6 @@ endif
 
 include $(IMAGINE_PATH)/make/imagineStaticLibBase.mk
 
-HIGH_OPTIMIZE_CFLAGS := -O3 $(HIGH_OPTIMIZE_CFLAGS_MISC)
 CPPFLAGS += -I$(projectPath)/include/imagine/override
 imagineSrcDir := $(projectPath)/src
 
@@ -30,7 +29,7 @@ include $(imagineSrcDir)/io/system.mk
 include $(imagineSrcDir)/io/MapIO.mk
 include $(imagineSrcDir)/bluetooth/system.mk
 include $(imagineSrcDir)/gui/gui.mk
-include $(imagineSrcDir)/resource/font/system.mk
+include $(imagineSrcDir)/font/system.mk
 include $(imagineSrcDir)/data-type/image/system.mk
 include $(imagineSrcDir)/mem/malloc.mk
 include $(imagineSrcDir)/util/system/pagesize.mk
@@ -52,7 +51,7 @@ prefix ?= $(IMAGINE_SDK_PLATFORM_PATH)
 imaginePkgconfigTemplate := $(IMAGINE_PATH)/pkgconfig/imagine.pc
 pkgName := $(libName)
 pkgDescription := Game/Multimedia Engine
-pkgVersion := 1.5.29
+pkgVersion := 1.5.34
 LDLIBS := -l$(libName) $(LDLIBS)
 ifdef libNameExt
  pkgCFlags := -DIMAGINE_CONFIG_H=$(configFilename)

@@ -15,12 +15,32 @@
 	You should have received a copy of the GNU General Public License
 	along with Imagine.  If not, see <http://www.gnu.org/licenses/> */
 
-#include <imagine/engine-globals.h>
+#include <memory>
+#include <imagine/config/defs.hh>
 #include <imagine/io/IO.hh>
+#include <imagine/io/BufferMapIO.hh>
+#include <imagine/fs/FSDefs.hh>
 #include <array>
 
 struct archive;
 struct archive_entry;
+struct ArchiveGenericIO;
+class ArchiveIO;
+
+class ArchiveEntry
+{
+public:
+	std::shared_ptr<struct archive> arch{};
+	struct archive_entry *ptr{};
+	ArchiveGenericIO *genericIO{};
+
+	const char *name() const;
+	FS::file_type type() const;
+	size_t size() const;
+	uint32 crc32() const;
+	ArchiveIO moveIO();
+	void moveIO(ArchiveIO io);
+};
 
 class ArchiveIO : public IO
 {
@@ -30,27 +50,27 @@ public:
 	using IOUtils::seek;
 
 	ArchiveIO() {}
-	ArchiveIO(std::shared_ptr<struct archive> arch, struct archive_entry *entry):
-		arch{std::move(arch)}, entry{entry}
+	ArchiveIO(ArchiveEntry entry):
+		entry{entry}
 	{}
 	~ArchiveIO() override;
 	ArchiveIO(ArchiveIO &&o);
 	ArchiveIO &operator=(ArchiveIO &&o);
 	operator GenericIO();
-	std::shared_ptr<struct archive> releaseArchive();
+	ArchiveEntry releaseArchive();
 	const char *name();
+	BufferMapIO moveToMapIO();
 
-	ssize_t read(void *buff, size_t bytes, CallResult *resultOut) override;
-	ssize_t write(const void *buff, size_t bytes, CallResult *resultOut) override;
-	off_t seek(off_t offset, SeekMode mode, CallResult *resultOut) override;
+	ssize_t read(void *buff, size_t bytes, std::error_code *ecOut) override;
+	ssize_t write(const void *buff, size_t bytes, std::error_code *ecOut) override;
+	off_t seek(off_t offset, SeekMode mode, std::error_code *ecOut) override;
 	void close() override;
 	size_t size() override;
 	bool eof() override;
 	explicit operator bool() override;
 
 private:
-	std::shared_ptr<struct archive> arch{};
-	struct archive_entry *entry{};
+	ArchiveEntry entry{};
 
 	// no copying outside of class
 	ArchiveIO(const ArchiveIO &) = default;

@@ -23,13 +23,12 @@
 #ifdef CONFIG_INPUT_EVDEV
 #include "../../input/evdev/evdev.hh"
 #endif
+#include <cstring>
 
 namespace Base
 {
 
 static FS::PathString appPath{};
-extern void runMainEventLoop();
-extern void initMainEventLoop();
 
 uint appActivityState() { return APP_RUNNING; }
 
@@ -75,7 +74,7 @@ FS::PathString storagePath()
 		// look for the first mounted SD card
 		for(auto &entry : FS::directory_iterator{"/media"})
 		{
-			if(entry.type() == FS::file_type::directory && strstr(entry.name(), "mmcblk"))
+			if(entry.type() == FS::file_type::directory && std::strstr(entry.name(), "mmcblk"))
 			{
 				//logMsg("storage dir: %s", entry.path().data());
 				return entry.path();
@@ -83,6 +82,11 @@ FS::PathString storagePath()
 		}
 		// fall back to appPath
 	}
+	return appPath;
+}
+
+FS::PathString libPath()
+{
 	return appPath;
 }
 
@@ -105,24 +109,52 @@ uint defaultSystemOrientations()
 
 void setOnSystemOrientationChanged(SystemOrientationChangedDelegate del) {}
 
+bool usesPermission(Permission p)
+{
+	return false;
+}
+
+bool requestPermission(Permission p)
+{
+	return false;
+}
+
+void setIdleDisplayPowerSave(bool on) {}
+
+void endIdleByUserActivity() {}
+
+#ifndef CONFIG_BASE_DBUS
+void registerInstance(const char *appID, int argc, char** argv) {}
+
+void setAcceptIPC(const char *appID, bool on) {}
+#endif
+
+void addNotification(const char *onShow, const char *title, const char *message) {}
+
+void addLauncherIcon(const char *name, const char *path) {}
+
+bool hasVibrator() { return false; }
+
+void vibrate(uint ms) {}
+
 }
 
 int main(int argc, char** argv)
 {
 	using namespace Base;
-	doOrAbort(logger_init());
+	logger_init();
 	engineInit();
 	appPath = FS::makeAppPathFromLaunchCommand(argv[0]);
-	initMainEventLoop();
+	auto eventLoop = EventLoop::makeForThread();
 	#ifdef CONFIG_BASE_X11
-	EventLoopFileSource x11Src;
-	if(initWindowSystem(x11Src) != OK)
+	FDEventSource x11Src;
+	if(initWindowSystem(eventLoop, x11Src) != OK)
 		return -1;
 	#endif
 	#ifdef CONFIG_INPUT_EVDEV
-	Input::initEvdev();
+	Input::initEvdev(eventLoop);
 	#endif
-	doOrAbort(onInit(argc, argv));
-	runMainEventLoop();
+	onInit(argc, argv);
+	eventLoop.run();
 	return 0;
 }

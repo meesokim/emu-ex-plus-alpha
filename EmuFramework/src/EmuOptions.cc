@@ -58,7 +58,7 @@ Byte1Option optionSoundBuffers(CFGKEY_SOUND_BUFFERS,
 OptionAudioHintStrictUnderrunCheck optionSoundUnderrunCheck(CFGKEY_SOUND_UNDERRUN_CHECK, 1);
 #endif
 
-#ifdef CONFIG_AUDIO_SOLO_MIX
+#ifdef CONFIG_AUDIO_MANAGER_SOLO_MIX
 OptionAudioSoloMix optionAudioSoloMix(CFGKEY_AUDIO_SOLO_MIX, 1);
 #endif
 
@@ -102,6 +102,7 @@ Byte1Option optionMOGAInputSystem(CFGKEY_MOGA_INPUT_SYSTEM, 0, 0);
 
 #ifdef CONFIG_BLUETOOTH
 Byte1Option optionKeepBluetoothActive(CFGKEY_KEEP_BLUETOOTH_ACTIVE, 0, !Config::BASE_CAN_BACKGROUND_APP);
+Byte1Option optionShowBluetoothScan(CFGKEY_SHOW_BLUETOOTH_SCAN, 1);
 	#ifdef CONFIG_BLUETOOTH_SCAN_CACHE_USAGE
 	OptionBlueToothScanCache optionBlueToothScanCache(CFGKEY_BLUETOOTH_SCAN_CACHE, 1);
 	#endif
@@ -225,7 +226,7 @@ OptionRecentGames optionRecentGames;
 Byte1Option optionAndroidTextureStorage{CFGKEY_ANDROID_TEXTURE_STORAGE, OPTION_ANDROID_TEXTURE_STORAGE_AUTO,
 	0, optionIsValidWithMax<OPTION_ANDROID_TEXTURE_STORAGE_MAX_VALUE>};
 SByte1Option optionProcessPriority{CFGKEY_PROCESS_PRIORITY, -6, 0, optionIsValidWithMinMax<-17, 0>};
-Byte1Option optionManageCPUFreq{CFGKEY_MANAGE_CPU_FREQ, 0, 0};
+Byte1Option optionFakeUserActivity{CFGKEY_FAKE_USER_ACTIVITY, 1, 0};
 #endif
 
 Byte1Option optionDitherImage(CFGKEY_DITHER_IMAGE, 1, !Config::envIsAndroid);
@@ -238,6 +239,8 @@ bool windowPixelFormatIsValid(uint8 val)
 		case IG::PIXEL_NONE:
 		case IG::PIXEL_RGB565:
 		case IG::PIXEL_RGB888:
+		case IG::PIXEL_RGBX8888:
+		case IG::PIXEL_RGBA8888:
 			return true;
 	}
 	return false;
@@ -247,6 +250,7 @@ Byte1Option optionWindowPixelFormat(CFGKEY_WINDOW_PIXEL_FORMAT, IG::PIXEL_NONE, 
 #endif
 
 PathOption optionSavePath(CFGKEY_SAVE_PATH, EmuSystem::savePath_, "");
+PathOption optionLastLoadPath(CFGKEY_LAST_DIR, lastLoadPath, "");
 Byte1Option optionCheckSavePathWriteAccess{CFGKEY_CHECK_SAVE_PATH_WRITE_ACCESS, 1};
 
 Byte1Option optionShowBundledGames(CFGKEY_SHOW_BUNDLED_GAMES, 1);
@@ -255,6 +259,11 @@ Byte1Option optionShowBundledGames(CFGKEY_SHOW_BUNDLED_GAMES, 1);
 
 void initOptions()
 {
+	if(!strlen(lastLoadPath.data()))
+	{
+		lastLoadPath = Base::storagePath();
+	}
+
 	optionSoundRate.initDefault(AudioManager::nativeFormat().rate);
 
 	#ifdef CONFIG_BASE_IOS
@@ -320,6 +329,22 @@ void initOptions()
 	{
 		optionShowOnSecondScreen.isConst = true;
 	}
+	else
+	{
+		#ifdef CONFIG_BLUETOOTH
+		optionShowBluetoothScan.initDefault(0);
+		#endif
+	}
+	if(Base::androidSDK() < 16)
+	{
+		optionFakeUserActivity.initDefault(0);
+		optionFakeUserActivity.isConst = true;
+	}
+	if(Base::androidSDK() < 11)
+	{
+		// never run app in onPaused state on Android 2.3
+		optionPauseUnfocused.isConst = true;
+	}
 	#endif
 
 	if(!Base::Screen::screen(0)->frameRateIsReliable())
@@ -350,16 +375,16 @@ bool OptionVControllerLayoutPosition::isDefault() const
 bool OptionVControllerLayoutPosition::writeToIO(IO &io)
 {
 	logMsg("writing vcontroller positions");
-	CallResult r = OK;
-	io.writeVal(key, &r);
+	std::error_code ec{};
+	io.writeVal(key, &ec);
 	for(auto &posArr : vControllerLayoutPos)
 	{
 		for(auto &e : posArr)
 		{
-			io.writeVal((uint8)e.origin, &r);
-			io.writeVal((uint8)e.state, &r);
-			io.writeVal((int32)e.pos.x, &r);
-			io.writeVal((int32)e.pos.y, &r);
+			io.writeVal((uint8)e.origin, &ec);
+			io.writeVal((uint8)e.state, &ec);
+			io.writeVal((int32)e.pos.x, &ec);
+			io.writeVal((int32)e.pos.y, &ec);
 		}
 	}
 	return 1;
@@ -415,7 +440,7 @@ bool OptionVControllerLayoutPosition::readFromIO(IO &io, uint readSize_)
 
 uint OptionVControllerLayoutPosition::ioSize()
 {
-	uint positions = sizeofArray(vControllerLayoutPos[0]) * sizeofArray(vControllerLayoutPos);
+	uint positions = IG::size(vControllerLayoutPos[0]) * IG::size(vControllerLayoutPos);
 	return sizeof(key) + positions * sizeofVControllerLayoutPositionEntry();
 }
 
@@ -439,10 +464,8 @@ void setupFont()
 {
 	float size = optionFontSize / 1000.;
 	logMsg("setting up font size %f", (double)size);
-	View::defaultFace->applySettings(FontSettings(mainWin.win.heightSMMInPixels(size)));
-	// TODO: not used yet
-	//float smallSize = std::max(2000, optionFontSize - 500) / 1000.;
-	//View::defaultSmallFace->applySettings(FontSettings(mainWin.win.heightSMMInPixels(smallSize)));
+	View::defaultFace.setFontSettings(IG::FontSettings(mainWin.win.heightSMMInPixels(size)));
+	View::defaultBoldFace.setFontSettings(IG::FontSettings(mainWin.win.heightSMMInPixels(size)));
 }
 
 #ifdef __ANDROID__
@@ -458,3 +481,49 @@ Gfx::Texture::AndroidStorageImpl makeAndroidStorageImpl(uint8 val)
 	}
 }
 #endif
+
+bool OptionRecentGames::readFromIO(IO &io, uint readSize_)
+{
+	int readSize = readSize_;
+	while(readSize && !recentGameList.isFull())
+	{
+		if(readSize < 2)
+		{
+			logMsg("expected string length but only %d bytes left", readSize);
+			break;
+		}
+
+		auto len = io.readVal<uint16>();
+		readSize -= 2;
+
+		if(len > readSize)
+		{
+			logMsg("string length %d longer than %d bytes left", len, readSize);
+			break;
+		}
+
+		RecentGameInfo info;
+		auto bytesRead = io.read(info.path.data(), len);
+		if(bytesRead == -1)
+		{
+			logErr("error reading string option");
+			return true;
+		}
+		if(!bytesRead)
+			continue; // don't add empty paths
+		info.path[bytesRead] = 0;
+		readSize -= len;
+		auto basename = FS::basename(info.path);
+		auto dotpos = string_dotExtension(basename.data());
+		std::copy_n(basename.data(), dotpos ? dotpos - basename.data() : std::strlen(basename.data()), info.name.data());
+		//logMsg("adding game to recent list: %s, name: %s", info.path, info.name);
+		recentGameList.push_back(info);
+	}
+
+	if(readSize)
+	{
+		logMsg("skipping excess %d bytes", readSize);
+	}
+
+	return true;
+}

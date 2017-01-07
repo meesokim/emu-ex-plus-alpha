@@ -14,14 +14,8 @@
 	along with EmuFramework.  If not, see <http://www.gnu.org/licenses/> */
 
 #include <emuframework/FileUtils.hh>
-#include <imagine/util/strings.h>
 #include <imagine/base/Base.hh>
 #include <imagine/logger/logger.h>
-
-void chdirFromFilePath(const char *path)
-{
-	FS::current_path(FS::dirname(path));
-}
 
 void fixFilePermissions(const char *path)
 {

@@ -17,10 +17,10 @@
 #include <emuframework/EmuInput.hh>
 #include <emuframework/VController.hh>
 #include <emuframework/EmuApp.hh>
+#include <imagine/util/math/Point2D.hh>
 #include <algorithm>
 
 extern bool touchControlsAreOn;
-bool touchControlsApplicable();
 
 void EmuVideoLayer::init()
 {
@@ -154,7 +154,7 @@ void EmuVideoLayer::place(const IG::WindowRect &viewportRect, const Gfx::Project
 		Gfx::GC yOffset = 0;
 		int yOffsetPixels = 0;
 		#ifdef CONFIG_EMUFRAMEWORK_VCONTROLS
-		if(onScreenControlsOverlay && viewportAspectRatio < 1. && touchControlsAreOn && touchControlsApplicable())
+		if(onScreenControlsOverlay && viewportAspectRatio < 1. && touchControlsAreOn && EmuSystem::touchControlsApplicable())
 		{
 			auto &layoutPos = vControllerLayoutPos[mainWin.viewport().isPortrait() ? 1 : 0];
 			if(layoutPos[VCTRL_LAYOUT_DPAD_IDX].origin.onTop() && layoutPos[VCTRL_LAYOUT_FACE_BTN_GAMEPAD_IDX].origin.onTop())

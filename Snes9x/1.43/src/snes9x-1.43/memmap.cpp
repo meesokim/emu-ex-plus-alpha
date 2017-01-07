@@ -115,7 +115,9 @@
 #include "spc7110.h"
 #include "seta.h"
 
+#ifdef UNZIP_SUPPORT
 #include "unzip.h"
+#endif
 
 #ifdef __W32_HEAP
 #include <malloc.h>
@@ -570,7 +572,7 @@ bool8 CMemory::LoadROMMem (const uint8 *source, uint32 sourceSize)
     bool8 Interleaved = FALSE;
     bool8 Tales = FALSE;
  
-	uint8* RomHeader=ROM;
+	const uint8* RomHeader=ROM;
 	
 	ExtendedFormat=NOPE;
 
@@ -578,9 +580,9 @@ bool8 CMemory::LoadROMMem (const uint8 *source, uint32 sourceSize)
  	if(CleanUp7110!=NULL)
 		(*CleanUp7110)();
 	
-    memset (&SNESGameFixes, 0, sizeof(SNESGameFixes));
+    SNESGameFixes = {};
     SNESGameFixes.SRAMInitialValue = 0x60;
-	
+
     memset (bytes0x2000, 0, 0x2000);
     CPU.TriedInterleavedMode2 = FALSE;
 	
@@ -592,7 +594,7 @@ again:
 	SET_UI_COLOR(255,255,255);
 
 	TotalFileSize = sourceSize;
-	memset(ROM, 0, MAX_ROM_SIZE + 0x200 + 0x8000);
+	memset(ROM - 0x8000, 0, MAX_ROM_SIZE + 0x200 + 0x8000); // "ROM" is already offset by 0x8000
 	memcpy(ROM, source, sourceSize);
 	{
 		int calc_size = (TotalFileSize / 0x2000) * 0x2000;
@@ -1551,10 +1553,16 @@ void CMemory::InitROM (bool8 Interleaved)
     //now take a CRC32
     ROMCRC32 = caCRC32(ROM, CalculatedSize);
 
-	if (Settings.ForceNTSC)
+  Settings.IdentifyAsPAL = FALSE;
+	if (Settings.ForceNTSC && Settings.ForcePAL)
+	{
 		Settings.PAL = FALSE;
-    else if (Settings.ForcePAL)
-		Settings.PAL = TRUE;
+		Settings.IdentifyAsPAL = !Settings.BS && (ROMRegion >= 2) && (ROMRegion <= 12);
+	}
+	else if (Settings.ForceNTSC)
+		Settings.PAL = FALSE;
+  else if (Settings.ForcePAL)
+		Settings.PAL = Settings.IdentifyAsPAL = TRUE;
 	else
 	{
 		//Korea refers to South Korea, which uses NTSC
@@ -1565,7 +1573,7 @@ void CMemory::InitROM (bool8 Interleaved)
 			case 0:
 				Settings.PAL=FALSE;
 				break;
-			default: Settings.PAL=TRUE;
+			default: Settings.PAL = Settings.IdentifyAsPAL = TRUE;
 				break;
 		}
 	}

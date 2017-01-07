@@ -19,8 +19,9 @@
 #include <dbus/dbus.h>
 #include "dbus.hh"
 #include "../common/basePrivate.hh"
-#include <imagine/base/EventLoopFileSource.hh>
+#include <imagine/base/EventLoop.hh>
 #include <imagine/logger/logger.h>
+#include <imagine/util/string.h>
 #ifdef CONFIG_BASE_GLIB
 #include <dbus/dbus-glib.h>
 #include <dbus/dbus-glib-lowlevel.h>
@@ -95,7 +96,7 @@ static DBusHandlerResult dbusSignalHandler(DBusConnection *connection, DBusMessa
 #ifndef CONFIG_BASE_GLIB
 struct DBusWatchHandler
 {
-	Base::EventLoopFileSource fdSrc;
+	Base::FDEventSource fdSrc;
 
 	void setupFDEvents(int fd, int events)
 	{

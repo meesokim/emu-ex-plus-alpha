@@ -1,9 +1,10 @@
 #pragma once
 
-#include <imagine/engine-globals.h>
+#include <cstddef>
+#include <imagine/config/defs.hh>
 #include <imagine/util/typeTraits.hh>
 #include <imagine/util/bits.h>
-#include <imagine/util/number.h>
+#include <imagine/util/math/math.hh>
 
 namespace IG
 {
@@ -24,16 +25,16 @@ public:
 		bytesPerPixel_{bytesPerPixel}, name_{name}
 	{}
 
-	template<class T, ENABLE_IF_COND(std::is_integral<T>)>
+	template<class T, ENABLE_IF_EXPR(std::is_integral_v<T>)>
 	constexpr uint build(T r, T g, T b, T a) const
 	{
-		return (rBits ? ((r & bit_fullMask<uint>(rBits)) << rShift) : 0) |
-			(gBits ? ((g & bit_fullMask<uint>(gBits)) << gShift) : 0) |
-			(bBits ? ((b & bit_fullMask<uint>(bBits)) << bShift) : 0) |
-			(aBits ? ((a & bit_fullMask<uint>(aBits)) << aShift) : 0);
+		return (rBits ? ((r & makeFullBits<uint>(rBits)) << rShift) : 0) |
+			(gBits ? ((g & makeFullBits<uint>(gBits)) << gShift) : 0) |
+			(bBits ? ((b & makeFullBits<uint>(bBits)) << bShift) : 0) |
+			(aBits ? ((a & makeFullBits<uint>(aBits)) << aShift) : 0);
 	}
 
-	template<class T, ENABLE_IF_COND(std::is_floating_point<T>)>
+	template<class T, ENABLE_IF_EXPR(std::is_floating_point_v<T>)>
 	constexpr uint build(T r, T g, T b, T a) const
 	{
 		return build(IG::scaleDecToBits<uint>(r, rBits), IG::scaleDecToBits<uint>(g, gBits), IG::scaleDecToBits<uint>(b, bBits), IG::scaleDecToBits<uint>(a, aBits));
@@ -41,7 +42,7 @@ public:
 
 	static constexpr uint component(uint pixel, uchar shift, uchar bits)
 	{
-		return (pixel >> shift) & bit_fullMask<uint>(bits);
+		return (pixel >> shift) & makeFullBits<uint>(bits);
 	}
 
 	constexpr uint a(uint pixel) const { return component(pixel, aShift, aBits); }

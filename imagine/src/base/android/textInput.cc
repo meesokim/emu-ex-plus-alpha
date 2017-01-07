@@ -45,7 +45,7 @@ static void setupTextInputJni(JNIEnv* env)
 		{
 			{"sysTextInputEnded", "(Ljava/lang/String;ZZ)V", (void *)&textInputEnded}
 		};
-		env->RegisterNatives(jBaseActivityCls, activityMethods, sizeofArray(activityMethods));
+		env->RegisterNatives(jBaseActivityCls, activityMethods, IG::size(activityMethods));
 	}
 }
 
@@ -101,7 +101,7 @@ static void JNICALL textInputEnded(JNIEnv* env, jobject thiz, jstring jStr, jboo
 		return;
 	}
 	setEventsUseOSInputMethod(false);
-	auto delegate = moveAndClear(vKeyboardTextDelegate);
+	auto delegate = IG::moveAndClear(vKeyboardTextDelegate);
 	if(delegate)
 	{
 		if(jStr)

@@ -271,12 +271,14 @@
             debug_nmi(CPU_INT_STATUS, (clk)); \
         }                                     \
     } while (0)
+
 #define TRACE_IRQ(clk)                        \
     do {                                      \
         if (TRACEFLG) {                       \
             debug_irq(CPU_INT_STATUS, (clk)); \
         }                                     \
     } while (0)
+
 #define TRACE_BRK()                \
     do {                           \
         if (TRACEFLG) {            \
@@ -404,46 +406,76 @@
 
 #define LOAD_ABS(addr) LOAD(addr)
 
+#ifndef LOAD_ABS_X
 #define LOAD_ABS_X(addr)              \
     ((((addr) & 0xff) + reg_x) > 0xff \
      ? (LOAD(reg_pc + 2),             \
         CLK_ADD(CLK, CYCLES_1),       \
         LOAD((addr) + reg_x))         \
      : LOAD((addr) + reg_x))
+#endif
 
+#ifndef LOAD_ABS_X_RMW
 #define LOAD_ABS_X_RMW(addr) \
     (LOAD(reg_pc + 2),       \
      CLK_ADD(CLK, CYCLES_1), \
      LOAD((addr) + reg_x))
+#endif
 
+#ifndef LOAD_ABS_Y
 #define LOAD_ABS_Y(addr)              \
     ((((addr) & 0xff) + reg_y) > 0xff \
      ? (LOAD(reg_pc + 2),             \
         CLK_ADD(CLK, CYCLES_1),       \
         LOAD((addr) + reg_y))         \
      : LOAD((addr) + reg_y))
+#endif
 
+#ifndef LOAD_INDIRECT
 #define LOAD_INDIRECT(addr) (CLK_ADD(CLK, CYCLES_2), LOAD(LOAD_ZERO_ADDR((addr))))
+#endif
 
+#ifndef LOAD_IND_X
 #define LOAD_IND_X(addr) (CLK_ADD(CLK, CYCLES_3), LOAD(LOAD_ZERO_ADDR((addr) + reg_x)))
+#endif
 
+#ifndef LOAD_IND_Y
 #define LOAD_IND_Y(addr)                                                      \
     (CLK_ADD(CLK, CYCLES_2), ((LOAD_ZERO_ADDR((addr)) & 0xff) + reg_y) > 0xff \
      ? (LOAD(reg_pc + 1),                                                     \
         CLK_ADD(CLK, CYCLES_1),                                               \
         LOAD(LOAD_ZERO_ADDR((addr)) + reg_y))                                 \
      : LOAD(LOAD_ZERO_ADDR((addr)) + reg_y))
+#endif
 
+#ifndef LOAD_ZERO_X
 #define LOAD_ZERO_X(addr) (LOAD_ZERO((addr) + reg_x))
+#endif
 
+#ifndef LOAD_ZERO_Y
 #define LOAD_ZERO_Y(addr) (LOAD_ZERO((addr) + reg_y))
+#endif
 
+#ifndef LOAD_IND_Y_BANK
 #define LOAD_IND_Y_BANK(addr)                                                 \
     (CLK_ADD(CLK, CYCLES_2), ((LOAD_ZERO_ADDR((addr)) & 0xff) + reg_y) > 0xff \
      ? (LOAD(reg_pc + 1),                                                     \
         CLK_ADD(CLK, CYCLES_1),                                               \
         LOAD_IND(LOAD_ZERO_ADDR((addr)) + reg_y))                             \
      : LOAD_IND(LOAD_ZERO_ADDR((addr)) + reg_y))
+#endif
+
+#ifndef LOAD_ZERO_ADDR_X
+#define LOAD_ZERO_ADDR_X(addr) LOAD_ZERO_ADDR((addr) + reg_x)
+#endif
+
+#define STORE_ZERO_RRW(addr, value) \
+    do {                            \
+        LOAD_ZERO(addr);            \
+        CLK_ADD(CLK, CYCLES_1);     \
+        STORE_ZERO(addr, value);    \
+        CLK_ADD(CLK, CYCLES_1);     \
+    } while (0)
 
 #define STORE_ABS(addr, value)  \
     do {                        \
@@ -514,7 +546,7 @@
                 tmp2 += 0x10;                                                            \
                 tmp += 6;                                                                \
             }                                                                            \
-            LOCAL_SET_OVERFLOW(~(reg_a ^ tmp_value) & (reg_a ^ tmp) & 0x80);             \
+            LOCAL_SET_OVERFLOW(~(reg_a ^ tmp_value) & (reg_a ^ tmp2) & 0x80);            \
             if (tmp2 > 0x90) {                                                           \
                 tmp2 += 0x60;                                                            \
             }                                                                            \
@@ -583,7 +615,15 @@
             CLK_ADD(CLK, CYCLES_1);                        \
             if (!tmp) {                                    \
                 dest_addr = reg_pc + (signed char)(value); \
-                OPCODE_DELAYS_INTERRUPT();                 \
+                                                           \
+                LOAD(reg_pc);                              \
+                CLK_ADD(CLK, CYCLES_1);                    \
+                if ((reg_pc ^ dest_addr) & 0xff00) {       \
+                    LOAD(reg_pc);                          \
+                    CLK_ADD(CLK, CYCLES_1);                \
+                } else {                                   \
+                    OPCODE_DELAYS_INTERRUPT();             \
+                }                                          \
                 JUMP(dest_addr & 0xffff);                  \
             }                                              \
         }                                                  \
@@ -610,7 +650,15 @@
                                                            \
             if (tmp) {                                     \
                 dest_addr = reg_pc + (signed char)(value); \
-                OPCODE_DELAYS_INTERRUPT();                 \
+                                                           \
+                LOAD(reg_pc);                              \
+                CLK_ADD(CLK, CYCLES_1);                    \
+                if ((reg_pc ^ dest_addr) & 0xff00) {       \
+                    LOAD(reg_pc);                          \
+                    CLK_ADD(CLK, CYCLES_1);                \
+                } else {                                   \
+                    OPCODE_DELAYS_INTERRUPT();             \
+                }                                          \
                 JUMP(dest_addr & 0xffff);                  \
             }                                              \
         }                                                  \
@@ -866,6 +914,7 @@
                                                \
         CLK_ADD(CLK, CYCLES_1);                \
         INC_PC(SIZE_2);                        \
+        LOAD(reg_sp | 0x100);                  \
         CLK_ADD(CLK, CYCLES_2);                \
         PUSH(((reg_pc) >> 8) & 0xff);          \
         PUSH((reg_pc) & 0xff);                 \
@@ -955,17 +1004,18 @@
         INC_PC(SIZE_3);         \
     } while (0)
 
+/* yes, this is strange but that's how it is */
 #define NOOP_5C()               \
     do {                        \
-        LOAD(p2);               \
+        LOAD(p2 | 0xff00);      \
         CLK_ADD(CLK, CYCLES_1); \
-        LOAD(reg_pc + 2);       \
+        LOAD(0xffff);           \
         CLK_ADD(CLK, CYCLES_1); \
-        LOAD(reg_pc + 2);       \
+        LOAD(0xffff);           \
         CLK_ADD(CLK, CYCLES_1); \
-        LOAD(reg_pc + 2);       \
+        LOAD(0xffff);           \
         CLK_ADD(CLK, CYCLES_1); \
-        LOAD(reg_pc + 2);       \
+        LOAD(0xffff);           \
         CLK_ADD(CLK, CYCLES_1); \
         INC_PC(SIZE_3);         \
     } while (0)
@@ -1002,6 +1052,7 @@
 
 #define PLA()                   \
     do {                        \
+        LOAD(reg_sp | 0x100);   \
         CLK_ADD(CLK, CYCLES_2); \
         reg_a = PULL();         \
         LOCAL_SET_NZ(reg_a);    \
@@ -1010,8 +1061,10 @@
 
 #define PLP()                                                 \
     do {                                                      \
-        BYTE s = PULL();                                      \
+        BYTE s;                                               \
                                                               \
+        LOAD(reg_sp | 0x100);                                 \
+        s = PULL();                                           \
         if (!(s & P_INTERRUPT) && LOCAL_INTERRUPT()) {        \
             OPCODE_ENABLES_IRQ();                             \
         } else if ((s & P_INTERRUPT) && !LOCAL_INTERRUPT()) { \
@@ -1024,6 +1077,7 @@
 
 #define PLX()                   \
     do {                        \
+        LOAD(reg_sp | 0x100);   \
         CLK_ADD(CLK, CYCLES_2); \
         reg_x = PULL();         \
         LOCAL_SET_NZ(reg_x);    \
@@ -1032,6 +1086,7 @@
 
 #define PLY()                   \
     do {                        \
+        LOAD(reg_sp | 0x100);   \
         CLK_ADD(CLK, CYCLES_2); \
         reg_y = PULL();         \
         LOCAL_SET_NZ(reg_y);    \
@@ -1053,7 +1108,7 @@
             CLK_ADD(CLK, CYCLES_1);                  \
             INC_PC(SIZE_2);                          \
             STORE_ZERO(tmp_addr, tmp);               \
-            CLK_ADD(CLK, 1);                         \
+            CLK_ADD(CLK, CYCLES_1);                  \
         }                                            \
     } while (0)
 
@@ -1116,6 +1171,7 @@
     do {                             \
         WORD tmp;                    \
                                      \
+        LOAD(reg_sp | 0x100);        \
         CLK_ADD(CLK, CYCLES_4);      \
         tmp = (WORD)PULL();          \
         LOCAL_SET_STATUS((BYTE)tmp); \
@@ -1128,6 +1184,7 @@
     do {                           \
         WORD tmp;                  \
                                    \
+        LOAD(reg_sp | 0x100);      \
         CLK_ADD(CLK, CYCLES_3);    \
         tmp = PULL();              \
         tmp = tmp | (PULL() << 8); \
@@ -1139,30 +1196,25 @@
 
 #define SBC(value, clk_inc, pc_inc)                                               \
     do {                                                                          \
-        WORD src, tmp;                                                            \
+        WORD src, tmp, tmp2;                                                      \
                                                                                   \
         src = (WORD)(value);                                                      \
         CLK_ADD(CLK, (clk_inc));                                                  \
+        tmp = reg_a - src + LOCAL_CARRY() - 1;                                    \
+        LOCAL_SET_OVERFLOW(((reg_a ^ tmp) & 0x80) && ((reg_a ^ src) & 0x80));     \
         if (LOCAL_DECIMAL()) {                                                    \
-            tmp = reg_a - (src & 0xf) + LOCAL_CARRY() - 1;                        \
-            if ((tmp & 0xf) > (reg_a & 0xf)) {                                    \
-                tmp -= 6;                                                         \
-            }                                                                     \
-            tmp -= (src & 0xf0);                                                  \
-            if ((tmp & 0xf0) > (reg_a & 0xf0)) {                                  \
+            if (tmp > 0xff) {                                                     \
                 tmp -= 0x60;                                                      \
             }                                                                     \
-            LOCAL_SET_OVERFLOW(!(tmp > reg_a));                                   \
-            LOCAL_SET_CARRY(!(tmp > reg_a));                                      \
-            LOCAL_SET_NZ(tmp & 0xff);                                             \
+            tmp2 = (reg_a & 0xf) - (src & 0xf) + LOCAL_CARRY() - 1;               \
+            if (tmp2 > 0xff) {                                                    \
+                tmp -= 6;                                                         \
+            }                                                                     \
             LOAD(reg_pc + pc_inc - 1);                                            \
             CLK_ADD(CLK, CYCLES_1);                                               \
-        } else {                                                                  \
-            tmp = reg_a - src - ((LOCAL_CARRY()) ? 0 : 1);                        \
-            LOCAL_SET_NZ(tmp & 0xff);                                             \
-            LOCAL_SET_CARRY(tmp < 0x100);                                         \
-            LOCAL_SET_OVERFLOW(((reg_a ^ tmp) & 0x80) && ((reg_a ^ src) & 0x80)); \
         }                                                                         \
+        LOCAL_SET_CARRY(reg_a + LOCAL_CARRY() - 1 >= src);                        \
+        LOCAL_SET_NZ(tmp & 0xff);                                                 \
         reg_a = (BYTE)tmp;                                                        \
         INC_PC(pc_inc);                                                           \
     } while (0)
@@ -1227,6 +1279,14 @@
         INC_PC(pc_inc);                 \
     } while (0)
 
+#define STA_ZERO_X(addr, clk_inc, pc_inc)  \
+    do {                                   \
+        LOAD_ZERO((addr));                 \
+        CLK_ADD(CLK, (clk_inc));           \
+        STORE_ZERO((addr) + reg_x, reg_a); \
+        INC_PC(pc_inc);                    \
+    } while (0)
+
 #define STA_IND_Y(addr)                \
     do {                               \
         unsigned int tmp;              \
@@ -1243,6 +1303,8 @@
 #define STP()                            \
     do {                                 \
         if (cpu_type == CPU_WDC65C02) {  \
+            LOAD(reg_pc + 1);            \
+            LOAD(reg_pc + 2);            \
             WDC_STP();                   \
         } else {                         \
             REWIND_FETCH_OPCODE(CLK, 2); \
@@ -1267,6 +1329,14 @@
         INC_PC(pc_inc);                 \
     } while (0)
 
+#define STX_ZERO_Y(addr, clk_inc, pc_inc)  \
+    do {                                   \
+        LOAD_ZERO((addr));                 \
+        CLK_ADD(CLK, (clk_inc));           \
+        STORE_ZERO((addr) + reg_y, reg_x); \
+        INC_PC(pc_inc);                    \
+    } while (0)
+
 #define STY(addr)               \
     do {                        \
         unsigned int tmp;       \
@@ -1284,6 +1354,14 @@
         INC_PC(pc_inc);                 \
     } while (0)
 
+#define STY_ZERO_X(addr, clk_inc, pc_inc)  \
+    do {                                   \
+        LOAD_ZERO((addr));                 \
+        CLK_ADD(CLK, (clk_inc));           \
+        STORE_ZERO((addr) + reg_x, reg_y); \
+        INC_PC(pc_inc);                    \
+    } while (0)
+
 #define STZ(addr, clk_inc, pc_inc, store_func) \
     do {                                       \
         unsigned int tmp;                      \
@@ -1299,6 +1377,14 @@
         CLK_ADD(CLK, (clk_inc));        \
         STORE_ZERO((addr), 0);          \
         INC_PC(pc_inc);                 \
+    } while (0)
+
+#define STZ_ZERO_X(addr, clk_inc, pc_inc) \
+    do {                                  \
+        LOAD_ZERO((addr));                \
+        CLK_ADD(CLK, (clk_inc));          \
+        STORE_ZERO((addr) + reg_x, 0);    \
+        INC_PC(pc_inc);                   \
     } while (0)
 
 #define TAX()                \
@@ -1333,6 +1419,7 @@
         unsigned int tmp_value, tmp_addr;                 \
                                                           \
         tmp_addr = (addr);                                \
+        tmp_value = load_func(tmp_addr);                  \
         tmp_value = load_func(tmp_addr);                  \
         LOCAL_SET_ZERO(!(tmp_value & reg_a));             \
         tmp_value |= reg_a;                               \
@@ -1371,9 +1458,10 @@
 #define WAI()                            \
     do {                                 \
         if (cpu_type == CPU_WDC65C02) {  \
+            LOAD(reg_pc + 1);            \
+            LOAD(reg_pc + 2);            \
             WDC_WAI();                   \
         } else {                         \
-            REWIND_FETCH_OPCODE(CLK, 2); \
             NOOP_IMM(SIZE_1);            \
         }                                \
     } while (0)
@@ -1394,15 +1482,16 @@
     /* $60 */  1, 1, 1, 0, 1, 1, 1, 0, 1, 1, 1, 0, 2, 2, 2, 0, /* $60 */
     /* $70 */  1, 1, 1, 0, 1, 1, 1, 0, 1, 2, 1, 0, 2, 2, 2, 0, /* $70 */
     /* $80 */  1, 1, 1, 0, 1, 1, 1, 0, 1, 1, 1, 0, 2, 2, 2, 0, /* $80 */
-    /* $90 */  1, 1, 1, 0, 1, 1, 1, 0, 1, 2, 1, 0, 2, 2, 2, 0, /* $90 */ 
+    /* $90 */  1, 1, 1, 0, 1, 1, 1, 0, 1, 2, 1, 0, 2, 2, 2, 0, /* $90 */
     /* $A0 */  1, 1, 1, 0, 1, 1, 1, 0, 1, 1, 1, 0, 2, 2, 2, 0, /* $A0 */
     /* $B0 */  1, 1, 1, 0, 1, 1, 1, 0, 1, 2, 1, 0, 2, 2, 2, 0, /* $B0 */
-    /* $C0 */  1, 1, 1, 0, 1, 1, 1, 0, 1, 1, 1, 2, 2, 2, 2, 0, /* $C0 */
-    /* $D0 */  1, 1, 1, 0, 1, 1, 1, 0, 1, 2, 1, 2, 2, 2, 2, 0, /* $D0 */
+    /* $C0 */  1, 1, 1, 0, 1, 1, 1, 0, 1, 1, 1, 0, 2, 2, 2, 0, /* $C0 */
+    /* $D0 */  1, 1, 1, 0, 1, 1, 1, 0, 1, 2, 1, 0, 2, 2, 2, 0, /* $D0 */
     /* $E0 */  1, 1, 1, 0, 1, 1, 1, 0, 1, 1, 1, 0, 2, 2, 2, 0, /* $E0 */
     /* $F0 */  1, 1, 1, 0, 1, 1, 1, 0, 1, 2, 1, 0, 2, 2, 2, 0  /* $F0 */
 };
 
+#ifndef FETCH_OPCODE
 #if !defined WORDS_BIGENDIAN && defined ALLOW_UNALIGNED_ACCESS
 
 #define opcode_t DWORD
@@ -1477,6 +1566,7 @@
 #endif
 
 #endif /* !WORDS_BIGENDIAN */
+#endif
 
 /*  SET_OPCODE for traps */
 #if !defined WORDS_BIGENDIAN && defined ALLOW_UNALIGNED_ACCESS
@@ -1632,7 +1722,7 @@ trap_skipped:
                 NOOP_ABS();
                 break;
 
-            case 0x5c:          /* NOP $nnnn + 4 (FIXME: correct ??) */
+            case 0x5c:          /* NOP broken */
                 NOOP_5C();
                 break;
 
@@ -1658,7 +1748,7 @@ trap_skipped:
                 break;
 
             case 0x06:          /* ASL $nn */
-                ASL(p1, CYCLES_3, SIZE_2, LOAD_ZERO, STORE_ZERO);
+                ASL(p1, CYCLES_1, SIZE_2, LOAD_ZERO, STORE_ZERO_RRW);
                 break;
 
             case 0x07:          /* RMB0 $nn (65C02) / single byte, single cycle NOP (65SC02) */
@@ -1706,7 +1796,7 @@ trap_skipped:
                 break;
 
             case 0x14:          /* TRB $nn */
-                TRB(p1, CYCLES_3, SIZE_2, LOAD_ZERO, STORE_ZERO);
+                TRB(p1, CYCLES_1, SIZE_2, LOAD_ZERO, STORE_ZERO_RRW);
                 break;
 
             case 0x15:          /* ORA $nn,X */
@@ -1714,7 +1804,7 @@ trap_skipped:
                 break;
 
             case 0x16:          /* ASL $nn,X */
-                ASL((p1 + reg_x) & 0xff, CYCLES_4, SIZE_2, LOAD_ZERO, STORE_ZERO);
+                ASL(p1, CYCLES_2, SIZE_2, LOAD_ZERO_X, STORE_ZERO_RRW);
                 break;
 
             case 0x17:          /* RMB1 $nn (65C02) / single byte, single cycle NOP (65SC02) */
@@ -1766,7 +1856,7 @@ trap_skipped:
                 break;
 
             case 0x26:          /* ROL $nn */
-                ROL(p1, CYCLES_3, SIZE_2, LOAD_ZERO, STORE_ZERO);
+                ROL(p1, CYCLES_1, SIZE_2, LOAD_ZERO, STORE_ZERO_RRW);
                 break;
 
             case 0x27:          /* RMB2 $nn (65C02) / single byte, single cycle NOP (65SC02) */
@@ -1822,7 +1912,7 @@ trap_skipped:
                 break;
 
             case 0x36:          /* ROL $nn,X */
-                ROL((p1 + reg_x) & 0xff, CYCLES_4, SIZE_2, LOAD_ZERO, STORE_ZERO);
+                ROL(p1, CYCLES_2, SIZE_2, LOAD_ZERO_X, STORE_ZERO_RRW);
                 break;
 
             case 0x37:          /* RMB3 $nn (65C02) / single byte, single cycle NOP (65SC02) */
@@ -1870,7 +1960,7 @@ trap_skipped:
                 break;
 
             case 0x46:          /* LSR $nn */
-                LSR(p1, CYCLES_3, SIZE_2, LOAD_ZERO, STORE_ZERO);
+                LSR(p1, CYCLES_1, SIZE_2, LOAD_ZERO, STORE_ZERO_RRW);
                 break;
 
             case 0x47:          /* RMB4 $nn (65C02) / single byte, single cycle NOP (65SC02) */
@@ -1922,7 +2012,7 @@ trap_skipped:
                 break;
 
             case 0x56:          /* LSR $nn,X */
-                LSR((p1 + reg_x) & 0xff, CYCLES_4, SIZE_2, LOAD_ZERO, STORE_ZERO);
+                LSR(p1, CYCLES_2, SIZE_2, LOAD_ZERO_X, STORE_ZERO_RRW);
                 break;
 
             case 0x57:          /* RMB5 $nn (65C02) / single byte, single cycle NOP (65SC02) */
@@ -1970,7 +2060,7 @@ trap_skipped:
                 break;
 
             case 0x66:          /* ROR $nn */
-                ROR(p1, CYCLES_3, SIZE_2, LOAD_ZERO, STORE_ZERO);
+                ROR(p1, CYCLES_1, SIZE_2, LOAD_ZERO, STORE_ZERO_RRW);
                 break;
 
             case 0x67:          /* RMB6 $nn (65C02) / single byte, single cycle NOP (65SC02) */
@@ -2018,7 +2108,7 @@ trap_skipped:
                 break;
 
             case 0x74:          /* STZ $nn,X */
-                STZ_ZERO(p1 + reg_x, CYCLES_2, SIZE_2);
+                STZ_ZERO_X(p1, CYCLES_2, SIZE_2);
                 break;
 
             case 0x75:          /* ADC $nn,X */
@@ -2026,7 +2116,7 @@ trap_skipped:
                 break;
 
             case 0x76:          /* ROR $nn,X */
-                ROR((p1 + reg_x) & 0xff, CYCLES_4, SIZE_2, LOAD_ZERO, STORE_ZERO);
+                ROR(p1, CYCLES_2, SIZE_2, LOAD_ZERO_X, STORE_ZERO_RRW);
                 break;
 
             case 0x77:          /* RMB7 $nn (65C02) / single byte, single cycle NOP (65SC02) */
@@ -2066,7 +2156,7 @@ trap_skipped:
                 break;
 
             case 0x81:          /* STA ($nn,X) */
-                STA(LOAD_ZERO_ADDR(p1 + reg_x), CYCLES_3, CYCLES_1, SIZE_2, STORE_ABS);
+                STA(LOAD_ZERO_ADDR_X(p1), CYCLES_3, CYCLES_1, SIZE_2, STORE_ABS);
                 break;
 
             case 0x84:          /* STY $nn */
@@ -2126,15 +2216,15 @@ trap_skipped:
                 break;
 
             case 0x94:          /* STY $nn,X */
-                STY_ZERO(p1 + reg_x, CYCLES_2, SIZE_2);
+                STY_ZERO_X(p1, CYCLES_2, SIZE_2);
                 break;
 
             case 0x95:          /* STA $nn,X */
-                STA_ZERO(p1 + reg_x, CYCLES_2, SIZE_2);
+                STA_ZERO_X(p1, CYCLES_2, SIZE_2);
                 break;
 
             case 0x96:          /* STX $nn,Y */
-                STX_ZERO(p1 + reg_y, CYCLES_2, SIZE_2);
+                STX_ZERO_Y(p1, CYCLES_2, SIZE_2);
                 break;
 
             case 0x97:          /* SMB1 $nn (65C02) / single byte, single cycle NOP (65SC02) */
@@ -2298,7 +2388,7 @@ trap_skipped:
                 break;
 
             case 0xc6:          /* DEC $nn */
-                DEC(p1, CYCLES_3, SIZE_2, LOAD_ZERO, STORE_ZERO);
+                DEC(p1, CYCLES_1, SIZE_2, LOAD_ZERO, STORE_ZERO_RRW);
                 break;
 
             case 0xc7:          /* SMB4 $nn (65C02) / single byte, single cycle NOP (65SC02) */
@@ -2354,7 +2444,7 @@ trap_skipped:
                 break;
 
             case 0xd6:          /* DEC $nn,X */
-                DEC((p1 + reg_x) & 0xff, CYCLES_4, SIZE_2, LOAD_ZERO, STORE_ZERO);
+                DEC(p1, CYCLES_2, SIZE_2, LOAD_ZERO_X, STORE_ZERO_RRW);
                 break;
 
             case 0xd7:          /* SMB5 $nn (65C02) / single byte, single cycle NOP (65SC02) */
@@ -2406,7 +2496,7 @@ trap_skipped:
                 break;
 
             case 0xe6:          /* INC $nn */
-                INC(p1, CYCLES_3, SIZE_2, LOAD_ZERO, STORE_ZERO);
+                INC(p1, CYCLES_1, SIZE_2, LOAD_ZERO, STORE_ZERO_RRW);
                 break;
 
             case 0xe7:          /* SMB6 $nn (65C02) / single byte, single cycle NOP (65SC02) */
@@ -2458,7 +2548,7 @@ trap_skipped:
                 break;
 
             case 0xf6:          /* INC $nn,X */
-                INC((p1 + reg_x) & 0xff, CYCLES_4, SIZE_2, LOAD_ZERO, STORE_ZERO);
+                INC(p1, CYCLES_2, SIZE_2, LOAD_ZERO_X, STORE_ZERO_RRW);
                 break;
 
             case 0xf7:          /* SMB7 $nn (65C02) / single byte, single cycle NOP (65SC02) */

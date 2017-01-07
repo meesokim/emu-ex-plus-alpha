@@ -32,12 +32,10 @@ extern FrameTimer *frameTimer;
 
 Window *deviceWindow();
 void androidWindowNeedsRedraw(Window &win);
-void androidWindowContentRectChanged(Window &win, const IG::WindowRect &rect, const IG::Point2D<int> &winSize);
 void initFrameTimer(JNIEnv *env, jobject activity);
 void removePostedNotifications();
 void initScreens(JNIEnv *env, jobject activity, jclass activityCls);
 void handleIntent(JNIEnv *env, jobject activity);
-void initActivityLooper();
 bool isXperiaPlayDeviceStr(const char *str);
 
 static bool surfaceRotationIsStraight(SurfaceRotation o)
@@ -74,5 +72,5 @@ bool hasGetAxisValue();
 }
 
 #if __ANDROID_API__ < 12
-extern float (__NDK_FPABI__ *AMotionEvent_getAxisValue)(const AInputEvent* motion_event, int32_t axis, size_t pointer_index);
+extern float (*AMotionEvent_getAxisValue)(const AInputEvent* motion_event, int32_t axis, size_t pointer_index);
 #endif

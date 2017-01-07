@@ -6,6 +6,7 @@
  *  Ettore Perazzoli <ettore@comm2000.it>
  *  Teemu Rantanen <tvr@cs.hut.fi>
  *  Daniel Kahlin <daniel@kahlin.net>
+ *  Marco van den Heuvel <blackystardust68@yahoo.com>
  *
  * This file is part of VICE, the Versatile Commodore Emulator.
  * See README for copyright notice.
@@ -34,6 +35,7 @@
 
 #include "attach.h"
 #include "autostart.h"
+#include "bbrtc.h"
 #include "c64cia.h"
 #include "c64dtv-cmdline-options.h"
 #include "c64dtv-resources.h"
@@ -48,7 +50,9 @@
 #include "c64ui.h"
 #include "cia.h"
 #include "clkguard.h"
+#include "coplin_keypad.h"
 #include "debug.h"
+#include "debugcart.h"
 #include "diskimage.h"
 #include "drive-cmdline-options.h"
 #include "drive-resources.h"
@@ -60,6 +64,8 @@
 #include "gfxoutput.h"
 #include "imagecontents.h"
 #include "init.h"
+#include "joyport.h"
+#include "joystick.h"
 #include "kbdbuf.h"
 #include "keyboard.h"
 #include "log.h"
@@ -71,11 +77,17 @@
 #include "mem.h"
 #include "monitor.h"
 #include "network.h"
+#include "paperclip64.h"
 #include "parallel.h"
 #include "patchrom.h"
 #include "printer.h"
+#include "ps2mouse.h"
 #include "resources.h"
 #include "rs232drv.h"
+#include "rushware_keypad.h"
+#include "sampler.h"
+#include "sampler2bit.h"
+#include "sampler4bit.h"
 #include "screenshot.h"
 #include "serial.h"
 #include "sid-cmdline-options.h"
@@ -83,8 +95,11 @@
 #include "sid.h"
 #include "sound.h"
 #include "tape.h"
+#include "tapeport.h"
+#include "translate.h"
 #include "traps.h"
 #include "types.h"
+#include "userport.h"
 #include "userport_joystick.h"
 #include "vice-event.h"
 #include "vicii.h"
@@ -228,7 +243,45 @@ static const trap_t c64dtv_flash_traps[] = {
 
 /* ------------------------------------------------------------------------ */
 
-/* C64-specific resource initialization.  This is called before initializing
+static joyport_port_props_t control_port_1 = 
+{
+    "Control port 1",
+    IDGS_CONTROL_PORT_1,
+    0,				/* has NO potentiometer connected to this port */
+    0,				/* has NO lightpen support on this port */
+    1					/* port is always active */
+};
+
+static joyport_port_props_t control_port_2 = 
+{
+    "Control port 2",
+    IDGS_CONTROL_PORT_2,
+    0,				/* has NO potentiometer connected to this port */
+    0,				/* has NO lightpen support on this port */
+    1					/* port is always active */
+};
+
+static joyport_port_props_t userport_joy_control_port = 
+{
+    "Userport joystick adapter port 1",
+    IDGS_USERPORT_JOY_ADAPTER_PORT_1,
+    0,				/* has NO potentiometer connected to this port */
+    0,				/* has NO lightpen support on this port */
+    0					/* port can be switched on/off */
+};
+
+static int init_joyport_ports(void)
+{
+    if (joyport_port_register(JOYPORT_1, &control_port_1) < 0) {
+        return -1;
+    }
+    if (joyport_port_register(JOYPORT_2, &control_port_2) < 0) {
+        return -1;
+    }
+    return joyport_port_register(JOYPORT_3, &userport_joy_control_port);
+}
+
+/* C64DTV-specific resource initialization.  This is called before initializing
    the machine itself with `machine_init()'.  */
 int machine_resources_init(void)
 {
@@ -268,12 +321,52 @@ int machine_resources_init(void)
         init_resource_fail("printer");
         return -1;
     }
+    if (init_joyport_ports() < 0) {
+        init_resource_fail("joyport ports");
+        return -1;
+    }
+    if (joyport_resources_init() < 0) {
+        init_resource_fail("joyport devices");
+        return -1;
+    }
+    if (joyport_sampler2bit_resources_init() < 0) {
+        init_resource_fail("joyport 2bit sampler");
+        return -1;
+    }
+    if (joyport_sampler4bit_resources_init() < 0) {
+        init_resource_fail("joyport 4bit sampler");
+        return -1;
+    }
+    if (joyport_bbrtc_resources_init() < 0) {
+        init_resource_fail("joyport bbrtc");
+        return -1;
+    }
+    if (joyport_paperclip64_resources_init() < 0) {
+        init_resource_fail("joyport paperclip64 dongle");
+        return -1;
+    }
+    if (joyport_coplin_keypad_resources_init() < 0) {
+        init_resource_fail("joyport coplin keypad");
+        return -1;
+    }
+    if (joyport_rushware_keypad_resources_init() < 0) {
+        init_resource_fail("joyport rushware keypad");
+        return -1;
+    }
     if (joystick_resources_init() < 0) {
         init_resource_fail("joystick");
         return -1;
     }
+    if (userport_resources_init() < 0) {
+        init_resource_fail("userport devices");
+        return -1;
+    }
     if (gfxoutput_resources_init() < 0) {
         init_resource_fail("gfxoutput");
+        return -1;
+    }
+    if (sampler_resources_init() < 0) {
+        init_resource_fail("samplerdrv");
         return -1;
     }
     if (fliplist_resources_init() < 0) {
@@ -318,7 +411,7 @@ int machine_resources_init(void)
     }
 #endif
 #ifdef HAVE_MOUSE
-    if (mouse_resources_init() < 0) {
+    if (mouse_ps2_resources_init() < 0) {
         init_resource_fail("mouse");
         return -1;
     }
@@ -337,6 +430,10 @@ int machine_resources_init(void)
         init_resource_fail("userport joystick");
         return -1;
     }
+    if (debugcart_resources_init() < 0) {
+        init_resource_fail("debug cart");
+        return -1;
+    }
     return 0;
 }
 
@@ -352,9 +449,13 @@ void machine_resources_shutdown(void)
     drive_resources_shutdown();
     fsdevice_resources_shutdown();
     disk_image_resources_shutdown();
+    sampler_resources_shutdown();
+    userport_resources_shutdown();
+    joyport_bbrtc_resources_shutdown();
+    debugcart_resources_shutdown();
 }
 
-/* C64-specific command-line option initialization.  */
+/* C64DTV-specific command-line option initialization.  */
 int machine_cmdline_options_init(void)
 {
     if (traps_cmdline_options_init() < 0) {
@@ -393,12 +494,28 @@ int machine_cmdline_options_init(void)
         init_cmdline_options_fail("printer");
         return -1;
     }
+    if (joyport_cmdline_options_init() < 0) {
+        init_cmdline_options_fail("joyport");
+        return -1;
+    }
+    if (joyport_bbrtc_cmdline_options_init() < 0) {
+        init_cmdline_options_fail("bbrtc");
+        return -1;
+    }
     if (joystick_cmdline_options_init() < 0) {
         init_cmdline_options_fail("joystick");
         return -1;
     }
+    if (userport_cmdline_options_init() < 0) {
+        init_cmdline_options_fail("userport");
+        return -1;
+    }
     if (gfxoutput_cmdline_options_init() < 0) {
         init_cmdline_options_fail("gfxoutput");
+        return -1;
+    }
+    if (sampler_cmdline_options_init() < 0) {
+        init_cmdline_options_fail("samplerdrv");
         return -1;
     }
     if (fliplist_cmdline_options_init() < 0) {
@@ -442,7 +559,7 @@ int machine_cmdline_options_init(void)
     }
 #endif
 #ifdef HAVE_MOUSE
-    if (mouse_cmdline_options_init() < 0) {
+    if (mouse_ps2_cmdline_options_init() < 0) {
         init_cmdline_options_fail("mouse");
         return -1;
     }
@@ -459,6 +576,10 @@ int machine_cmdline_options_init(void)
     }
     if (userport_joystick_cmdline_options_init() < 0) {
         init_cmdline_options_fail("userport_joystick");
+        return -1;
+    }
+    if (debugcart_cmdline_options_init() < 0) {
+        init_cmdline_options_fail("debug cart");
         return -1;
     }
     return 0;
@@ -496,7 +617,7 @@ void machine_setup_context(void)
     machine_printer_setup_context(&machine_context);
 }
 
-/* C64-specific initialization.  */
+/* C64DTV-specific initialization.  */
 int machine_specific_init(void)
 {
     int delay;
@@ -519,10 +640,6 @@ int machine_specific_init(void)
 
     serial_trap_init(0xa4);
     serial_iec_bus_init();
-
-    if (!video_disabled_mode) {
-        joystick_init();
-    }
 
     gfxoutput_init();
 
@@ -549,6 +666,15 @@ int machine_specific_init(void)
     }
     autostart_init((CLOCK)(delay * C64_PAL_RFSH_PER_SEC * C64_PAL_CYCLES_PER_RFSH),
                    1, 0xcc, 0xd1, 0xd3, 0xd5);
+
+#ifdef USE_BEOS_UI
+    /* Pre-init C64DTV-specific parts of the menus before vicii_init()
+       creates a canvas window with a menubar at the top. This could
+       also be used by other ports, e.g. GTK+...  */
+    if (!console_mode) {
+        c64dtvui_init_early();
+    }
+#endif
 
     if (vicii_init(VICII_DTV) == NULL && !console_mode) {
         return -1;
@@ -586,9 +712,13 @@ int machine_specific_init(void)
     /* Initialize keyboard buffer.  */
     kbdbuf_init(631, 198, 10, (CLOCK)(machine_timing.rfsh_per_sec * machine_timing.cycles_per_rfsh));
 
-    /* Initialize the C64-specific part of the UI.  */
+    /* Initialize the C64DTV-specific part of the UI.  */
     if (!console_mode) {
         c64dtvui_init();
+    }
+
+    if (!video_disabled_mode) {
+        joystick_init();
     }
 
     /* Initialize the C64DTV.  */
@@ -596,15 +726,14 @@ int machine_specific_init(void)
 
 #ifdef HAVE_MOUSE
     /* Initialize mouse support (if present).  */
-    mouse_init();
+    mouse_ps2_init();
 #endif
 
     c64iec_init();
     c64fastiec_init();
 
     machine_drive_stub();
-#if defined (USE_XF86_EXTENSIONS) && \
-    (defined(USE_XF86_VIDMODE_EXT) || defined (HAVE_XRANDR))
+#if defined (USE_XF86_EXTENSIONS) && (defined(USE_XF86_VIDMODE_EXT) || defined (HAVE_XRANDR))
     {
         /* set fullscreen if user used `-fullscreen' on cmdline */
         int fs;
@@ -618,7 +747,7 @@ int machine_specific_init(void)
     return 0;
 }
 
-/* C64-specific reset sequence.  */
+/* C64DTV-specific reset sequence.  */
 void machine_specific_reset(void)
 {
     serial_traps_reset();
@@ -640,6 +769,8 @@ void machine_specific_reset(void)
 
     drive_reset();
     c64dtvmem_reset();
+
+    sampler_reset();
 }
 
 void machine_specific_powerup(void)
@@ -653,7 +784,7 @@ void machine_specific_shutdown(void)
     ciacore_shutdown(machine_context.cia2);
 
 #ifdef HAVE_MOUSE
-    mouse_shutdown();
+    mouse_ps2_shutdown();
 #endif
 
     /* close the video chip(s) */
@@ -661,7 +792,9 @@ void machine_specific_shutdown(void)
 
     c64dtvmem_shutdown();
 
-    c64dtvui_shutdown();
+    if (!console_mode) {
+        c64dtvui_shutdown();
+    }
 }
 
 void machine_handle_pending_alarms(int num_write_cycles)
@@ -722,34 +855,8 @@ void machine_get_line_cycle(unsigned int *line, unsigned int *cycle, int *half_c
     *half_cycle = (int)-1;
 }
 
-void machine_change_timing(int timeval)
+void machine_change_timing(int timeval, int border_mode)
 {
-    int border_mode;
-
-    switch (timeval) {
-        default:
-        case MACHINE_SYNC_PAL ^ VICII_BORDER_MODE(VICII_NORMAL_BORDERS):
-        case MACHINE_SYNC_NTSC ^ VICII_BORDER_MODE(VICII_NORMAL_BORDERS):
-            timeval ^= VICII_BORDER_MODE(VICII_NORMAL_BORDERS);
-            border_mode = VICII_NORMAL_BORDERS;
-            break;
-        case MACHINE_SYNC_PAL ^ VICII_BORDER_MODE(VICII_FULL_BORDERS):
-        case MACHINE_SYNC_NTSC ^ VICII_BORDER_MODE(VICII_FULL_BORDERS):
-            timeval ^= VICII_BORDER_MODE(VICII_FULL_BORDERS);
-            border_mode = VICII_FULL_BORDERS;
-            break;
-        case MACHINE_SYNC_PAL ^ VICII_BORDER_MODE(VICII_DEBUG_BORDERS):
-        case MACHINE_SYNC_NTSC ^ VICII_BORDER_MODE(VICII_DEBUG_BORDERS):
-            timeval ^= VICII_BORDER_MODE(VICII_DEBUG_BORDERS);
-            border_mode = VICII_DEBUG_BORDERS;
-            break;
-        case MACHINE_SYNC_PAL ^ VICII_BORDER_MODE(VICII_NO_BORDERS):
-        case MACHINE_SYNC_NTSC ^ VICII_BORDER_MODE(VICII_NO_BORDERS):
-            timeval ^= VICII_BORDER_MODE(VICII_NO_BORDERS);
-            border_mode = VICII_NO_BORDERS;
-            break;
-    }
-
     switch (timeval) {
         case MACHINE_SYNC_PAL:
             machine_timing.cycles_per_sec = C64_PAL_CYCLES_PER_SEC;
@@ -840,18 +947,31 @@ BYTE machine_tape_type_default(void)
     return TAPE_CAS_TYPE_PRG;
 }
 
-/* to avoid linkage problems */
-void datasette_trigger_flux_change(unsigned int on)
+BYTE machine_tape_behaviour(void)
 {
-}
-
-void datasette_set_tape_sense(int sense)
-{
+    return TAPE_BEHAVIOUR_NORMAL;
 }
 
 int machine_autodetect_psid(const char *name)
 {
     return -1;
+}
+
+tapeport_device_list_t *tapeport_device_register(tapeport_device_t *device)
+{
+    return NULL;
+}
+
+void tapeport_device_unregister(tapeport_device_list_t *device)
+{
+}
+
+void tapeport_trigger_flux_change(unsigned int on, int id)
+{
+}
+
+void tapeport_set_tape_sense(int sense, int id)
+{
 }
 
 int machine_addr_in_ram(unsigned int addr)
@@ -864,4 +984,21 @@ int machine_addr_in_ram(unsigned int addr)
 const char *machine_get_name(void)
 {
     return machine_name;
+}
+
+/* ------------------------------------------------------------------------- */
+
+static userport_port_props_t userport_props = {
+    0, /* NO pa2 pin */
+    0, /* NO pa3 pin */
+    0, /* NO flag pin */
+    0, /* NO pc pin */
+    0  /* NO cnt1, cnt2 or sp pins */
+};
+
+int machine_register_userport(void)
+{
+    userport_port_register(&userport_props);
+
+    return 0;
 }

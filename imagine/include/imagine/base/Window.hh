@@ -15,7 +15,7 @@
 	You should have received a copy of the GNU General Public License
 	along with Imagine.  If not, see <http://www.gnu.org/licenses/> */
 
-#include <imagine/engine-globals.h>
+#include <imagine/config/defs.hh>
 #include <imagine/base/baseDefs.hh>
 #include <imagine/base/Screen.hh>
 #include <imagine/base/WindowConfig.hh>
@@ -25,6 +25,7 @@
 #include <imagine/util/DelegateFunc.hh>
 #include <imagine/util/bits.h>
 #include <imagine/input/Input.hh>
+#include <system_error>
 
 namespace Base
 {
@@ -34,7 +35,7 @@ class Window : public WindowImpl
 public:
 	constexpr Window() {}
 
-	CallResult init(const WindowConfig &config);
+	std::error_code init(const WindowConfig &config);
 	void show();
 	void dismiss();
 	void setAcceptDnd(bool on);
@@ -49,6 +50,7 @@ public:
 	static uint windows();
 	static Window *window(uint idx);
 	static PixelFormat defaultPixelFormat();
+	NativeWindow nativeObject();
 
 	// Called when the state of the window's drawing surface changes,
 	// such as a re-size or if it becomes the current drawing target
@@ -158,10 +160,6 @@ private:
 	void dispatchSurfaceChange();
 };
 
-using OnGLDrawableChangedDelegate = DelegateFunc<void (Window *newDrawable)>;
-
-// Called when a system event changes the currently bound GL drawable
-void setOnGLDrawableChanged(OnGLDrawableChangedDelegate del);
 Window &mainWindow();
 Screen &mainScreen();
 

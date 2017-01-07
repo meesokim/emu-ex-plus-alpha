@@ -16,8 +16,9 @@
 #define LOGTAG "CoreAudio"
 #include <imagine/audio/Audio.hh>
 #include <imagine/logger/logger.h>
-#include <imagine/util/number.h>
 #include <imagine/util/ringbuffer/MachRingBuffer.hh>
+#include <imagine/util/utility.h>
+#include <imagine/util/algorithm.h>
 #include <AudioUnit/AudioUnit.h>
 #include <TargetConditionals.h>
 
@@ -60,7 +61,7 @@ static OSStatus outputCallback(void *inRefCon, AudioUnitRenderActionFlags *ioAct
 	if(unlikely(hadUnderrun))
 	{
 		*ioActionFlags |= kAudioUnitRenderAction_OutputIsSilence;
-		mem_zero(buf, bytes);
+		std::fill_n(buf, bytes, 0);
 		return 0;
 	}
 
@@ -71,32 +72,29 @@ static OSStatus outputCallback(void *inRefCon, AudioUnitRenderActionFlags *ioAct
 		hadUnderrun = true;
 		uint padBytes = bytes - read;
 		//logMsg("padding %d bytes", padBytes);
-		mem_zero(&buf[read], padBytes);
+		std::fill_n(&buf[read], padBytes, 0);
 	}
 	return 0;
 }
 
-static CallResult openUnit(AudioStreamBasicDescription &fmt, uint bufferSize)
+static std::error_code openUnit(AudioStreamBasicDescription &fmt, uint bufferSize)
 {
 	logMsg("creating unit %dHz %d channels", (int)fmt.mSampleRate, (int)fmt.mChannelsPerFrame);
-
 	if(!rBuff.init(bufferSize))
 	{
-		return OUT_OF_MEMORY;
+		return {ENOMEM, std::system_category()};
 	}
-
 	auto err = AudioUnitSetProperty(outputUnit, kAudioUnitProperty_StreamFormat, kAudioUnitScope_Input,
 			0, &fmt, sizeof(AudioStreamBasicDescription));
 	if(err)
 	{
 		logErr("error %d setting stream format", (int)err);
 		rBuff.deinit();
-		return INVALID_PARAMETER;
+		return {EINVAL, std::system_category()};
 	}
 	AudioUnitInitialize(outputUnit);
 	isOpen_ = true;
-
-	return OK;
+	return {};
 }
 
 static void init()
@@ -132,12 +130,12 @@ static void init()
 	}
 }
 
-CallResult openPcm(const PcmFormat &format)
+std::error_code openPcm(const PcmFormat &format)
 {
 	if(isOpen())
 	{
 		logWarn("audio unit already open");
-		return OK;
+		return {};
 	}
 	if(unlikely(!isInit()))
 		init();

@@ -15,7 +15,7 @@
 	You should have received a copy of the GNU General Public License
 	along with Imagine.  If not, see <http://www.gnu.org/licenses/> */
 
-#include <imagine/engine-globals.h>
+#include <imagine/config/defs.hh>
 #include <imagine/io/MapIO.hh>
 #include <imagine/util/DelegateFunc.hh>
 
@@ -30,8 +30,8 @@ public:
 	BufferMapIO(BufferMapIO &&o);
 	BufferMapIO &operator=(BufferMapIO &&o);
 	operator GenericIO();
-	CallResult open(const void *buff, size_t size, OnCloseDelegate onClose);
-	CallResult open(const void *buff, size_t size)
+	std::error_code open(const void *buff, size_t size, OnCloseDelegate onClose);
+	std::error_code open(const void *buff, size_t size)
 	{
 		return open(buff, size, {});
 	}

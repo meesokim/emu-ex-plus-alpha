@@ -185,15 +185,15 @@ const char *Wiimote::ExtDevice::keyName(Input::Key k) const
 
 uint Wiimote::findFreeDevId()
 {
-	uint id[5] = { 0 };
+	uint id[5]{};
 	for(auto e : devList)
 	{
 		id[e->player] = 1;
 	}
-	forEachInArray(id, e)
+	for(auto &e : id)
 	{
-		if(*e == 0)
-			return e_i;
+		if(e == 0)
+			return &e - id;
 	}
 	logMsg("too many devices");
 	return 0;
@@ -446,7 +446,7 @@ bool Wiimote::dataHandler(const char *packetPtr, size_t size)
 						}
 						extension = EXT_CC;
 						sendDataModeByExtension();
-						memset(prevExtData, 0xFF, sizeof(prevExtData));
+						IG::fillData(prevExtData, 0xFF);
 						axisKey[0] = {31-8, 31+8,
 							WiiCC::LSTICK_LEFT, WiiCC::LSTICK_RIGHT, Keycode::JS1_XAXIS_NEG, Keycode::JS1_XAXIS_POS};
 						axisKey[1] = {31-8, 31+8,
@@ -467,7 +467,7 @@ bool Wiimote::dataHandler(const char *packetPtr, size_t size)
 						logMsg("extension is Nunchuk");
 						extension = EXT_NUNCHUK;
 						sendDataModeByExtension();
-						memset(prevExtData, 0xFF, sizeof(prevExtData));
+						IG::fillData(prevExtData, 0xFF);
 						axisKey[0] = {127-64, 127+64,
 							Input::Wiimote::NUN_STICK_LEFT, Input::Wiimote::NUN_STICK_RIGHT, Keycode::JS1_XAXIS_NEG, Keycode::JS1_XAXIS_POS};
 						axisKey[1] = {127-64, 127+64,
@@ -479,7 +479,7 @@ bool Wiimote::dataHandler(const char *packetPtr, size_t size)
 						logMsg("extension is Wii U Pro");
 						extension = EXT_WIIU_PRO;
 						sendDataModeByExtension();
-						memset(prevExtData, 0xFF, sizeof(prevExtData));
+						IG::fillData(prevExtData, 0xFF);
 						axisKey[0] = {2048-256, 2048+256,
 							WiiCC::LSTICK_LEFT, WiiCC::LSTICK_RIGHT, Keycode::JS1_XAXIS_NEG, Keycode::JS1_XAXIS_POS};
 						axisKey[1] = {2048-256, 2048+256,
@@ -563,14 +563,14 @@ void Wiimote::processCoreButtons(const uchar *packet, Input::Time time, uint pla
 {
 	using namespace Input;
 	auto btnData = &packet[2];
-	forEachInArray(wiimoteDataAccess, e)
+	for(auto &e : wiimoteDataAccess)
 	{
-		int newState = e->updateState(prevBtnData, btnData);
+		int newState = e.updateState(prevBtnData, btnData);
 		if(newState != -1)
 		{
-			//logMsg("%s %s @ wiimote %d", buttonName(Event::MAP_WIIMOTE, e->keyEvent), newState ? "pushed" : "released", player);
+			//logMsg("%s %s @ wiimote %d", buttonName(Event::MAP_WIIMOTE, e.keyEvent), newState ? "pushed" : "released", player);
 			Base::endIdleByUserActivity();
-			Event event{(uint)player, Event::MAP_WIIMOTE, e->keyEvent, e->sysKey, newState ? PUSHED : RELEASED, 0, time, this};
+			Event event{(uint)player, Event::MAP_WIIMOTE, e.keyEvent, e.sysKey, newState ? PUSHED : RELEASED, 0, time, this};
 			startKeyRepeatTimer(event);
 			dispatchInputEvent(event);
 		}
@@ -590,15 +590,15 @@ void Wiimote::processClassicButtons(const uchar *packet, Input::Time time, uint 
 		if(axisKey[i].dispatch(stickPos[i], player, Input::Event::MAP_WIIMOTE, time, *this, Base::mainWindow()))
 			Base::endIdleByUserActivity();
 	}
-	forEachInArray(wiimoteCCDataAccess, e)
+	for(auto &e : wiimoteCCDataAccess)
 	{
-		int newState = e->updateState(prevExtData, ccData);
+		int newState = e.updateState(prevExtData, ccData);
 		if(newState != -1)
 		{
 			// note: buttons are 0 when pushed
-			//logMsg("%s %s @ wiimote cc", buttonName(Event::MAP_WIIMOTE, e->keyEvent), !newState ? "pushed" : "released");
+			//logMsg("%s %s @ wiimote cc", buttonName(Event::MAP_WIIMOTE, e.keyEvent), !newState ? "pushed" : "released");
 			Base::endIdleByUserActivity();
-			Event event{player, Event::MAP_WII_CC, e->keyEvent, e->sysKey, !newState ? PUSHED : RELEASED, 0, time, &extDevice};
+			Event event{player, Event::MAP_WII_CC, e.keyEvent, e.sysKey, !newState ? PUSHED : RELEASED, 0, time, &extDevice};
 			startKeyRepeatTimer(event);
 			dispatchInputEvent(event);
 		}
@@ -618,15 +618,15 @@ void Wiimote::processProButtons(const uchar *packet, Input::Time time, uint play
 		if(axisKey[i].dispatch(stickPos[i], player, Input::Event::MAP_WIIMOTE, time, *this, Base::mainWindow()))
 			Base::endIdleByUserActivity();
 	}
-	forEachInArray(wiimoteProDataAccess, e)
+	for(auto &e : wiimoteProDataAccess)
 	{
-		int newState = e->updateState(prevExtData, proData);
+		int newState = e.updateState(prevExtData, proData);
 		if(newState != -1)
 		{
 			// note: buttons are 0 when pushed
-			//logMsg("%s %s @ wii u pro", buttonName(Event::MAP_WIIMOTE, e->keyEvent), !newState ? "pushed" : "released");
+			//logMsg("%s %s @ wii u pro", buttonName(Event::MAP_WIIMOTE, e.keyEvent), !newState ? "pushed" : "released");
 			Base::endIdleByUserActivity();
-			Event event{player, Event::MAP_WII_CC, e->keyEvent, e->sysKey, !newState ? PUSHED : RELEASED, 0, time, this};
+			Event event{player, Event::MAP_WII_CC, e.keyEvent, e.sysKey, !newState ? PUSHED : RELEASED, 0, time, this};
 			startKeyRepeatTimer(event);
 			dispatchInputEvent(event);
 		}
@@ -644,14 +644,14 @@ void Wiimote::processNunchukButtons(const uchar *packet, Input::Time time, uint 
 		if(axisKey[i].dispatch(nunData[i], player, Input::Event::MAP_WIIMOTE, time, *this, Base::mainWindow()))
 			Base::endIdleByUserActivity();
 	}
-	forEachInArray(wiimoteNunchukDataAccess, e)
+	for(auto &e : wiimoteNunchukDataAccess)
 	{
-		int newState = e->updateState(prevExtData, nunData);
+		int newState = e.updateState(prevExtData, nunData);
 		if(newState != -1)
 		{
-			//logMsg("%s %s @ wiimote nunchuk",buttonName(Event::MAP_WIIMOTE, e->keyEvent), !newState ? "pushed" : "released");
+			//logMsg("%s %s @ wiimote nunchuk",buttonName(Event::MAP_WIIMOTE, e.keyEvent), !newState ? "pushed" : "released");
 			Base::endIdleByUserActivity();
-			Event event{player, Event::MAP_WIIMOTE, e->keyEvent, e->sysKey, !newState ? PUSHED : RELEASED, 0, time, this};
+			Event event{player, Event::MAP_WIIMOTE, e.keyEvent, e.sysKey, !newState ? PUSHED : RELEASED, 0, time, this};
 			startKeyRepeatTimer(event);
 			dispatchInputEvent(event);
 		}
@@ -740,4 +740,11 @@ void Wiimote::setJoystickAxisAsDpadBits(uint axisMask)
 			axisKey[3].highSysKey = on ? Keycode::UP : Keycode::JS2_YAXIS_NEG;
 		}
 	}
+}
+
+bool Wiimote::isSupportedClass(const uchar devClass[3])
+{
+	return IG::equal_n(devClass, 3, btClass)
+		|| IG::equal_n(devClass, 3, btClassDevOnly)
+		|| IG::equal_n(devClass, 3, btClassRemotePlus);
 }

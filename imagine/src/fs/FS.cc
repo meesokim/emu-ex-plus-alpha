@@ -20,7 +20,7 @@
 #include <stdlib.h>
 #include <imagine/fs/FS.hh>
 #include <imagine/logger/logger.h>
-#include <imagine/util/strings.h>
+#include <imagine/util/string.h>
 #include <libgen.h>
 #ifdef basename
 // libgen.h may define this macro and clash with FS::basename
@@ -32,6 +32,16 @@
 
 namespace FS
 {
+
+FileString makeFileStringPrintf(const char *format, ...)
+{
+	FileString path{};
+	va_list args;
+	va_start(args, format);
+	vsnprintf(path.data(), path.size(), format, args);
+	va_end(args);
+	return path;
+}
 
 PathString makePathStringPrintf(const char *format, ...)
 {
@@ -55,6 +65,11 @@ PathString makePathString(const char *str)
 	PathString path{};
 	string_copy(path, str);
 	return path;
+}
+
+PathString makePathString(const char *dir, const char *file)
+{
+	return makePathStringPrintf("%s/%s", dir, file);
 }
 
 PathString makeAppPathFromLaunchCommand(const char *launchCmd)

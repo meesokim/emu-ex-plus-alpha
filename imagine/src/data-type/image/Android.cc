@@ -18,7 +18,6 @@
 #include <imagine/data-type/image/Android.hh>
 #include <assert.h>
 #include <imagine/logger/logger.h>
-#include <imagine/util/strings.h>
 #include <imagine/util/jni.hh>
 #include "../../base/android/android.hh"
 
@@ -27,7 +26,6 @@ using namespace IG;
 static jclass jBitmapFactory{};
 static JavaClassMethod<jobject(jstring)> jDecodeFile{};
 static JavaInstMethod<jobject(jstring)> jDecodeAsset{};
-static JavaInstMethod<void()> jRecycle{};
 
 uint BitmapFactoryImage::width()
 {
@@ -63,7 +61,7 @@ PixelFormat BitmapFactoryImage::pixelFormat() const
 	}
 }
 
-CallResult BitmapFactoryImage::load(const char *name)
+std::error_code BitmapFactoryImage::load(const char *name)
 {
 	freeImageData();
 	auto env = Base::jEnv();
@@ -78,18 +76,14 @@ CallResult BitmapFactoryImage::load(const char *name)
 	if(!bitmap)
 	{
 		logErr("couldn't decode file: %s", name);
-		return INVALID_PARAMETER;
-	}
-	if(!jRecycle)
-	{
-		jRecycle.setup(env, env->GetObjectClass(bitmap), "recycle", "()V");
+		return {EINVAL, std::system_category()};
 	}
 	AndroidBitmap_getInfo(env, bitmap, &info);
 	bitmap = env->NewGlobalRef(bitmap);
-	return OK;
+	return {};
 }
 
-CallResult BitmapFactoryImage::loadAsset(const char *name)
+std::error_code BitmapFactoryImage::loadAsset(const char *name)
 {
 	freeImageData();
 	logMsg("loading PNG asset: %s", name);
@@ -105,16 +99,12 @@ CallResult BitmapFactoryImage::loadAsset(const char *name)
 	if(!bitmap)
 	{
 		logErr("couldn't decode file: %s", name);
-		return INVALID_PARAMETER;
-	}
-	if(!jRecycle)
-	{
-		jRecycle.setup(env, env->GetObjectClass(bitmap), "recycle", "()V");
+		return {EINVAL, std::system_category()};
 	}
 	AndroidBitmap_getInfo(env, bitmap, &info);
 	//logMsg("%d %d %d", info.width, info.height, info.stride);
 	bitmap = env->NewGlobalRef(bitmap);
-	return OK;
+	return {};
 }
 
 bool BitmapFactoryImage::hasAlphaChannel()
@@ -122,7 +112,7 @@ bool BitmapFactoryImage::hasAlphaChannel()
 	return info.format == ANDROID_BITMAP_FORMAT_RGBA_8888 || info.format == ANDROID_BITMAP_FORMAT_RGBA_4444;
 }
 
-CallResult BitmapFactoryImage::readImage(IG::Pixmap &dest)
+std::error_code BitmapFactoryImage::readImage(IG::Pixmap &dest)
 {
 	assert(dest.format() == pixelFormat());
 	auto env = Base::jEnv();
@@ -131,7 +121,7 @@ CallResult BitmapFactoryImage::readImage(IG::Pixmap &dest)
 	IG::Pixmap src{{{(int)info.width, (int)info.height}, pixelFormat()}, buff, {info.stride, IG::Pixmap::BYTE_UNITS}};
 	dest.write(src, {});
 	AndroidBitmap_unlockPixels(env, bitmap);
-	return OK;
+	return {};
 }
 
 void BitmapFactoryImage::freeImageData()
@@ -139,13 +129,13 @@ void BitmapFactoryImage::freeImageData()
 	if(bitmap)
 	{
 		auto env = Base::jEnv();
-		jRecycle(env, bitmap);
+		Base::recycleBitmap(env, bitmap);
 		env->DeleteGlobalRef(bitmap);
 		bitmap = nullptr;
 	}
 }
 
-CallResult PngFile::write(IG::Pixmap &dest)
+std::error_code PngFile::write(IG::Pixmap dest)
 {
 	return(png.readImage(dest));
 }
@@ -158,13 +148,13 @@ IG::Pixmap PngFile::lockPixmap()
 
 void PngFile::unlockPixmap() {}
 
-CallResult PngFile::load(const char *name)
+std::error_code PngFile::load(const char *name)
 {
 	deinit();
 	return png.load(name);
 }
 
-CallResult PngFile::loadAsset(const char *name)
+std::error_code PngFile::loadAsset(const char *name)
 {
 	deinit();
 	return png.loadAsset(name);

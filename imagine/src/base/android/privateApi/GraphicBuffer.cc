@@ -23,11 +23,11 @@ namespace Base
 static gralloc_module_t const *grallocMod{};
 static alloc_device_t *allocDev{};
 
-void initAllocDev()
+static void initAllocDev()
 {
 	if(allocDev)
 		return;
-	if(libhardware_dl() != OK)
+	if(!libhardware_dl())
 	{
 		logErr("Incompatible libhardware.so");
 		return;
@@ -43,7 +43,16 @@ void initAllocDev()
 		logErr("Can't load allocator device");
 		return;
 	}
-	assert(allocDev->free);
+	if(!allocDev->alloc || !allocDev->free)
+	{
+		logErr("Missing alloc/free functions");
+		if(allocDev->common.close)
+			gralloc_close(allocDev);
+		else
+			logWarn("Missing device close function");
+		allocDev = {};
+		return;
+	}
 	logMsg("alloc device:%p", allocDev);
 }
 
@@ -130,6 +139,11 @@ uint GraphicBuffer::getStride()
 android_native_buffer_t *GraphicBuffer::getNativeBuffer()
 {
 	return static_cast<android_native_buffer_t*>(this);
+}
+
+bool GraphicBuffer::hasBufferMapper()
+{
+	return allocDev;
 }
 
 }

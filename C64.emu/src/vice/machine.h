@@ -84,6 +84,7 @@ extern int video_disabled_mode;
 /* Initialize the machine's resources.  */
 extern int machine_common_resources_init(void);
 extern int machine_resources_init(void);
+extern void machine_common_resources_shutdown(void);
 extern void machine_resources_shutdown(void);
 
 /* Initialize the machine's command-line options.  */
@@ -102,7 +103,7 @@ extern void machine_maincpu_init(void);
 /* Reset the machine.  */
 #define MACHINE_RESET_MODE_SOFT 0
 #define MACHINE_RESET_MODE_HARD 1
-extern void machine_trigger_reset(const unsigned int reset_mode);
+extern VICE_API void machine_trigger_reset(const unsigned int reset_mode);
 extern void machine_reset(void);
 extern void machine_specific_reset(void);
 extern void machine_reset_event_playback(CLOCK offset, void *data);
@@ -115,7 +116,7 @@ extern void machine_shutdown(void);
 extern void machine_specific_shutdown(void);
 
 /* Set the state of the RESTORE key (!=0 means pressed) */
-extern void machine_set_restore_key(int v);
+extern VICE_API void machine_set_restore_key(int v);
 
 /* returns 1 if key is present */
 extern int machine_has_restore_key(void);
@@ -133,11 +134,11 @@ extern void machine_set_cycles_per_frame(long cpf);
 extern void machine_get_line_cycle(unsigned int *line, unsigned int *cycle, int *half_cycle);
 
 /* Write a snapshot.  */
-extern int machine_write_snapshot(const char *name, int save_roms,
+extern VICE_API int machine_write_snapshot(const char *name, int save_roms,
                                   int save_disks, int even_mode);
 
 /* Read a snapshot.  */
-extern int machine_read_snapshot(const char *name, int even_mode);
+extern VICE_API int machine_read_snapshot(const char *name, int even_mode);
 
 /* handle pending interrupts - needed by libsid.a.  */
 extern void machine_handle_pending_alarms(int num_write_cycles);
@@ -153,7 +154,7 @@ extern int machine_sid2_check_range(unsigned int sid2_adr);
 extern int machine_sid3_check_range(unsigned int sid3_adr);
 
 /* Change the timing parameters of the maching (for example PAL/NTSC).  */
-extern void machine_change_timing(int timeval);
+extern void machine_change_timing(int timeval, int border_mode);
 
 /* Get screenshot data.  */
 struct screenshot_s;
@@ -188,6 +189,7 @@ extern char *machine_romset_file_list(void);
 extern int machine_romset_archive_item_create(const char *romset_name);
 
 extern BYTE machine_tape_type_default(void);
+extern BYTE machine_tape_behaviour(void);
 
 /* Check if address is in RAM (for autostart) */
 extern int machine_addr_in_ram(unsigned int addr);
@@ -210,5 +212,7 @@ extern kbdtype_info_t *machine_get_keyboard_info_list(void);
 
 extern int machine_get_keyboard_type(void);
 extern char *machine_get_keyboard_type_name(int type);
+
+extern int machine_register_userport(void);
 
 #endif

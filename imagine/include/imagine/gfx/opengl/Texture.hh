@@ -15,7 +15,7 @@
 	You should have received a copy of the GNU General Public License
 	along with Imagine.  If not, see <http://www.gnu.org/licenses/> */
 
-#include <imagine/engine-globals.h>
+#include <imagine/config/defs.hh>
 #include <imagine/gfx/defs.hh>
 
 namespace Gfx
@@ -115,6 +115,8 @@ public:
 	static AndroidStorageImpl androidStorageImpl();
 	static bool isAndroidGraphicBufferStorageWhitelisted();
 	bool isExternal();
+	static const char *androidStorageImplStr(AndroidStorageImpl);
+	static const char *androidStorageImplStr();
 	#endif
 };
 

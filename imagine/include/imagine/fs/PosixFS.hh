@@ -17,20 +17,23 @@
 
 #include <ctime>
 #include <memory>
+#include <array>
+#include <system_error>
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <unistd.h>
 #include <dirent.h>
-#include <imagine/engine-globals.h>
+#include <imagine/config/defs.hh>
 #include <imagine/util/bits.h>
+#include <imagine/util/algorithm.h>
 
 namespace FS
 {
 
-static constexpr uint FILE_STRING_SIZE = IG::maxConst(512, NAME_MAX + 1);
+static constexpr uint FILE_STRING_SIZE = IG::cmax(512, NAME_MAX + 1);
 using FileStringImpl = std::array<char, FILE_STRING_SIZE>;
 
-static constexpr uint PATH_STRING_SIZE = IG::maxConst(1024, PATH_MAX);
+static constexpr uint PATH_STRING_SIZE = IG::cmax(1024, PATH_MAX);
 using PathStringImpl = std::array<char, PATH_STRING_SIZE>;
 
 using FileTimeTypeImpl = std::time_t;
@@ -62,7 +65,7 @@ protected:
 	std::shared_ptr<DIR> dir{};
 	DirectoryEntryImpl entry{};
 
-	void init(const char *path, CallResult &result);
+	void init(const char *path, std::error_code &result);
 };
 
 };

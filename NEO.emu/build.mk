@@ -2,12 +2,16 @@ ifndef inc_main
 inc_main := 1
 
 # -O3 is faster with NEO.emu
-CFLAGS_OPTIMIZE_RELEASE_DEFAULT += -O3
+CFLAGS_OPTIMIZE_LEVEL_RELEASE_DEFAULT = -O3
 
 include $(IMAGINE_PATH)/make/imagineAppBase.mk
 
 SRC += main/Main.cc \
-main/EmuControls.cc
+main/input.cc \
+main/options.cc \
+main/unzip.cc \
+main/EmuControls.cc \
+main/EmuMenuViews.cc
 
 CPPFLAGS += -I$(projectPath)/src \
 -DHAVE_CONFIG_H
@@ -32,8 +36,7 @@ $(GEO)/pd4990a.c \
 $(GEO)/roms.c \
 $(GEO)/state.c \
 $(GEO)/timer.c \
-$(GEO)/video.c \
-$(GEO)/unzip.c
+$(GEO)/video.c
 
 ifeq ($(ENV), webos)
  LDLIBS += -lpthread

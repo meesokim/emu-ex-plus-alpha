@@ -48,6 +48,7 @@ void BluezBluetoothAdapter::sendBTScanStatusDelegate(uint8 type, uint8 arg = 0)
 //	}
 }
 
+// TODO: allow providing specific EventLoop to handle events
 bool BluezBluetoothAdapter::openDefault()
 {
 	if(socket > 0)
@@ -71,7 +72,7 @@ bool BluezBluetoothAdapter::openDefault()
 	}
 
 	{
-		statusPipe.init(
+		statusPipe.init({},
 			[this](Base::Pipe &pipe)
 			{
 				while(statusPipe.hasData())
@@ -88,27 +89,6 @@ bool BluezBluetoothAdapter::openDefault()
 				}
 				return 1;
 			});
-//		int ret = pipe(statusPipe);
-//		assert(ret == 0);
-//		statusPipeHandler = [this](int events)
-//			{
-//				if(events & Base::POLLEV_ERR)
-//					return 0;
-//				while(fd_bytesReadable(statusPipe[0]))
-//				{
-//					ScanStatusMessage msg;
-//					if(read(statusPipe[0], &msg, sizeof(ScanStatusMessage)) != sizeof(msg))
-//					{
-//						logErr("error reading BT socket status message in pipe");
-//						return 1;
-//					}
-//					logMsg("got bluetooth adapter status delegate message");
-//					auto bta = BluetoothAdapter::defaultAdapter();
-//					bta->onScanStatus()(*bta, msg.type, msg.arg);
-//				}
-//				return 1;
-//			};
-//		Base::addPollEvent(statusPipe[0], statusPipeHandler);
 	}
 
 	return 1;
@@ -133,14 +113,6 @@ void BluezBluetoothAdapter::close()
 		socket = -1;
 	}
 	statusPipe.deinit();
-//	if(statusPipe[0] != -1)
-//	{
-//		Base::removePollEvent(statusPipe[0]);
-//		::close(statusPipe[0]);
-//		statusPipe[0] = -1;
-//		::close(statusPipe[1]);
-//		statusPipe[1] = -1;
-//	}
 }
 
 BluezBluetoothAdapter *BluezBluetoothAdapter::defaultAdapter()
@@ -230,7 +202,7 @@ bool BluezBluetoothAdapter::startScan(OnStatusDelegate onResult, OnScanDeviceCla
 		onScanStatusD = onResult;
 		onScanDeviceClassD = onDeviceClass;
 		onScanDeviceNameD = onDeviceName;
-		IG::runOnThread(
+		IG::makeDetachedThread(
 			[this]()
 			{
 				doScan(onScanDeviceClassD, onScanDeviceNameD);
@@ -298,8 +270,7 @@ void BluezBluetoothAdapter::setL2capService(uint psm, bool active, OnStatusDeleg
 		return;
 	}
 	logMsg("registering l2cap service for PSM 0x%X", psm);
-	struct sockaddr_l2 addr;
-	mem_zero(addr);
+	struct sockaddr_l2 addr{};
 	addr.l2_family = AF_BLUETOOTH;
 	addr.l2_psm = htobs(psm);
 
@@ -323,8 +294,7 @@ void BluezBluetoothAdapter::setL2capService(uint psm, bool active, OnStatusDeleg
 	/*{
 		int lm = L2CAP_LM_MASTER;
 		setsockopt(serverFd, SOL_L2CAP, L2CAP_LM, &lm, sizeof(lm));
-		struct l2cap_options opts;
-		mem_zero(opts);
+		struct l2cap_options opts{};
 		opts.imtu = 64;
 		opts.omtu = HIDP_DEFAULT_MTU;
 		opts.flush_to = 0xffff;
@@ -341,7 +311,7 @@ void BluezBluetoothAdapter::setL2capService(uint psm, bool active, OnStatusDeleg
 	}
 
 	serverList.emplace_back(psm, serverFd);
-	serverList.back().connectSrc.init(serverFd,
+	serverList.back().connectSrc = {serverFd, {},
 		[this](int fd, int events)
 		{
 			logMsg("incoming l2cap connection from server fd %d", fd);
@@ -358,7 +328,7 @@ void BluezBluetoothAdapter::setL2capService(uint psm, bool active, OnStatusDeleg
 			logMsg("for PSM 0x%X, fd %d", pending.addr.l2_psm, pending.fd);
 			onIncomingL2capConnectionD(*this, pending);
 			return 1;
-		});
+		}};
 	//Base::addPollEvent(serverFd, serverList.back().onConnect, Base::POLLEV_IN);
 	onResult(*this, 1, 0);
 	return;
@@ -446,9 +416,9 @@ int BluezBluetoothSocket::readPendingData(int events)
 	{
 		logMsg("finished opening socket %d", fd);
 		if(onStatusD(*this, STATUS_OPENED) == OPEN_USAGE_READ_EVENTS)
-			fdSrc.setEvents(Base::POLLEV_IN);
+			fdSrc.modifyEvents(Base::POLLEV_IN);
 		else
-			fdSrc.deinit();
+			fdSrc.removeFromEventLoop();
 	}
 
 	return 1;
@@ -456,20 +426,20 @@ int BluezBluetoothSocket::readPendingData(int events)
 
 void BluezBluetoothSocket::setupFDEvents(int events)
 {
-	fdSrc.init(fd,
+	fdSrc = {fd, {},
 		[this](int fd, int events)
 		{
 			return readPendingData(events);
-		}, Base::POLLEV_OUT);
+		},
+		Base::POLLEV_OUT};
 }
 
 CallResult BluezBluetoothSocket::openRfcomm(BluetoothAddr bdaddr, uint channel)
 {
-	struct sockaddr_rc addr;
-	mem_zero(addr);
+	struct sockaddr_rc addr{};
 	addr.rc_family = AF_BLUETOOTH;
 	addr.rc_channel = (uint8_t)channel;
-	memcpy(addr.rc_bdaddr.b, bdaddr.b, 6);
+	memcpy(addr.rc_bdaddr.b, bdaddr.data(), 6);
 	//addr.rc_bdaddr = bdaddr;
 	fd = ::socket(AF_BLUETOOTH, SOCK_STREAM, BTPROTO_RFCOMM);
 	if(fd == -1)
@@ -494,11 +464,10 @@ CallResult BluezBluetoothSocket::openRfcomm(BluetoothAddr bdaddr, uint channel)
 
 CallResult BluezBluetoothSocket::openL2cap(BluetoothAddr bdaddr, uint psm)
 {
-	struct sockaddr_l2 addr;
-	mem_zero(addr);
+	struct sockaddr_l2 addr{};
 	addr.l2_family = AF_BLUETOOTH;
 	addr.l2_psm = htobs(psm);
-	memcpy(addr.l2_bdaddr.b, bdaddr.b, 6);
+	memcpy(addr.l2_bdaddr.b, bdaddr.data(), 6);
 	//addr.l2_bdaddr = bdaddr;
 	fd = ::socket(AF_BLUETOOTH, SOCK_SEQPACKET, BTPROTO_L2CAP);
 	if(fd == -1)
@@ -531,7 +500,7 @@ void BluezBluetoothSocket::close()
 	{
 		/*if(shutdown(fd, SHUT_RDWR) != 0)
 			logWarn("error shutting down socket");*/
-		fdSrc.deinit();
+		fdSrc.removeFromEventLoop();
 		if(::close(fd) != 0)
 			logWarn("error closing socket");
 		fd = -1;

@@ -3,9 +3,13 @@
 #include <imagine/logger/logger.h>
 #include <imagine/fs/FS.hh>
 #include <imagine/io/api/stdio.hh>
+#include <imagine/fs/ArchiveFS.hh>
+#include <emuframework/FilePicker.hh>
 #include <stdio.h>
+#include "internal.hh"
 #include <fceu/driver.h>
 #include <fceu/video.h>
+#include <fceu/fceu.h>
 
 bool turbo = 0;
 int closeFinishedMovie = 0;
@@ -117,6 +121,58 @@ void FCEUD_SetInput(bool fourscore, bool microphone, ESI port0, ESI port1, ESIFC
 	logMsg("called set input");
 }
 
+int FCEUD_FDSReadBIOS(void *buff, uint32 size)
+{
+	if(!strlen(fdsBiosPath.data()))
+	{
+		fceuReturnedError = "No FDS BIOS set";
+		return -1;
+	}
+	if(hasArchiveExtension(fdsBiosPath.data()))
+	{
+		std::error_code ec{};
+		for(auto &entry : FS::ArchiveIterator{fdsBiosPath, ec})
+		{
+			if(entry.type() == FS::file_type::directory)
+			{
+				continue;
+			}
+			auto name = entry.name();
+			logMsg("archive file entry:%s", name);
+			if(hasFDSBIOSExtension(name))
+			{
+				auto io = entry.moveIO();
+				if(io.size() != size)
+				{
+					fceuReturnedError = "Incompatible FDS BIOS";
+					return -1;
+				}
+				return io.read(buff, size);
+			}
+		}
+		fceuReturnedError = "Error opening FDS BIOS";
+		return -1;
+	}
+	else
+	{
+		FileIO io{};
+		io.open(fdsBiosPath);
+		if(!io)
+		{
+			fceuReturnedError = "Error opening FDS BIOS";
+			return -1;
+		}
+		if(io.size() != size)
+		{
+			fceuReturnedError = "Incompatible FDS BIOS";
+			return -1;
+		}
+		return io.read(buff, size);
+	}
+}
+
+void RefreshThrottleFPS() {}
+
 // for boards/transformer.cpp
 unsigned int *GetKeyboard(void)
 {
@@ -160,9 +216,6 @@ int debug_loggingCD = 0;
 int FCEUnetplay=0;
 int FCEUNET_SendCommand(uint8, uint32) { return 0; }
 void NetplayUpdate(uint8 *joyp) { }
-
-// from movie.cpp
-void FCEUI_MakeBackupMovie(bool dispMessage) { }
 
 // from fceu.cpp
 bool CheckFileExists(const char* filename)

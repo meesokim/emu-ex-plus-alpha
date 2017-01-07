@@ -15,6 +15,8 @@
 
 #define LOGTAG "MOGAInput"
 #include <imagine/base/Base.hh>
+#include <imagine/util/algorithm.h>
+#include <imagine/logger/logger.h>
 #include "internal.hh"
 #include "android.hh"
 #include "../../input/private.hh"
@@ -32,20 +34,6 @@ static JavaInstMethod<jint(jint)> jMOGAGetState{};
 static JavaInstMethod<void()> jMOGAOnPause{}, jMOGAOnResume{}, jMOGAExit{};
 static AndroidInputDevice mogaDev{0, Device::TYPE_BIT_GAMEPAD | Device::TYPE_BIT_JOYSTICK};
 static bool mogaConnected = false;
-
-static void JNICALL mogaMotionEvent(JNIEnv* env, jobject thiz, jfloat x, jfloat y, jfloat z, jfloat rz, jfloat lTrigger, jfloat rTrigger, jlong timestamp)
-{
-	assert(mogaConnected);
-	Base::endIdleByUserActivity();
-	auto time = Time::makeWithNSecs(timestamp);
-	logMsg("MOGA motion event: %f %f %f %f %f %f %d", (double)x, (double)y, (double)z, (double)rz, (double)lTrigger, (double)rTrigger, (int)timestamp);
-	mogaDev.axis[0].keyEmu.dispatch(x, 0, Event::MAP_SYSTEM, time, mogaDev, Base::mainWindow());
-	mogaDev.axis[1].keyEmu.dispatch(y, 0, Event::MAP_SYSTEM, time, mogaDev, Base::mainWindow());
-	mogaDev.axis[2].keyEmu.dispatch(z, 0, Event::MAP_SYSTEM, time, mogaDev, Base::mainWindow());
-	mogaDev.axis[3].keyEmu.dispatch(rz, 0, Event::MAP_SYSTEM, time, mogaDev, Base::mainWindow());
-	mogaDev.axis[4].keyEmu.dispatch(lTrigger, 0, Event::MAP_SYSTEM, time, mogaDev, Base::mainWindow());
-	mogaDev.axis[5].keyEmu.dispatch(rTrigger, 0, Event::MAP_SYSTEM, time, mogaDev, Base::mainWindow());
-}
 
 static void updateMOGAState(JNIEnv *env, bool connected, bool notify)
 {
@@ -100,8 +88,20 @@ static void initMOGAJNIAndDevice(JNIEnv *env, jobject mogaHelper)
 		},
 		{
 			"motionEvent", "(FFFFFFJ)V",
-			// TODO: can't inline as lambda because applying attribute via JNICALL in gcc 4.9 has no effect
-			(void*)mogaMotionEvent
+			(void*)(void (*)(JNIEnv*, jobject, jfloat, jfloat, jfloat, jfloat, jfloat, jfloat, jlong))
+			([](JNIEnv* env, jobject thiz, jfloat x, jfloat y, jfloat z, jfloat rz, jfloat lTrigger, jfloat rTrigger, jlong timestamp)
+			{
+				assert(mogaConnected);
+				Base::endIdleByUserActivity();
+				auto time = Time::makeWithNSecs(timestamp);
+				logMsg("MOGA motion event: %f %f %f %f %f %f %d", (double)x, (double)y, (double)z, (double)rz, (double)lTrigger, (double)rTrigger, (int)timestamp);
+				mogaDev.axis[0].keyEmu.dispatch(x, 0, Event::MAP_SYSTEM, time, mogaDev, Base::mainWindow());
+				mogaDev.axis[1].keyEmu.dispatch(y, 0, Event::MAP_SYSTEM, time, mogaDev, Base::mainWindow());
+				mogaDev.axis[2].keyEmu.dispatch(z, 0, Event::MAP_SYSTEM, time, mogaDev, Base::mainWindow());
+				mogaDev.axis[3].keyEmu.dispatch(rz, 0, Event::MAP_SYSTEM, time, mogaDev, Base::mainWindow());
+				mogaDev.axis[4].keyEmu.dispatch(lTrigger, 0, Event::MAP_SYSTEM, time, mogaDev, Base::mainWindow());
+				mogaDev.axis[5].keyEmu.dispatch(rTrigger, 0, Event::MAP_SYSTEM, time, mogaDev, Base::mainWindow());
+			})
 		},
 		{
 			"stateEvent", "(II)V",
@@ -116,7 +116,7 @@ static void initMOGAJNIAndDevice(JNIEnv *env, jobject mogaHelper)
 			})
 		}
 	};
-	env->RegisterNatives(mogaHelperCls, method, sizeofArray(method));
+	env->RegisterNatives(mogaHelperCls, method, IG::size(method));
 
 	mogaDev.subtype_ = Device::SUBTYPE_GENERIC_GAMEPAD;
 	mogaDev.axisBits = Device::AXIS_BITS_STICK_1 | Device::AXIS_BITS_STICK_2;
@@ -176,7 +176,7 @@ void deinitMOGA()
 	jMOGAExit(env, mogaHelper);
 	env->DeleteGlobalRef(mogaHelper);
 	mogaHelper = nullptr;
-	if(contains(devList, &mogaDev))
+	if(IG::contains(devList, &mogaDev))
 	{
 		mogaConnected = false;
 		removeDevice(mogaDev);

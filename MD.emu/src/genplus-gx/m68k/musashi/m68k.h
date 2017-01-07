@@ -31,7 +31,6 @@
 /* Import the configuration for this build */
 #include <genplus-config.h>
 #include <assert.h>
-#include <imagine/util/branch.h>
 #include <imagine/logger/logger.h>
 #include <stdlib.h>
 #include "m68kconf.h"
@@ -283,9 +282,9 @@ struct M68KCPU
 #endif
 
   int irqLatency = 0;
-  uint cycleCount = 0;
-  uint endCycles = 0;
-  _m68k_memory_map memory_map[256];
+  uint32 cycleCount = 0;
+  uint32 endCycles = 0;
+  _m68k_memory_map memory_map[256]{};
 
   /* Set the IPL0-IPL2 pins on the CPU (IRQ).
    * A transition from < 7 to 7 will cause a non-maskable interrupt (NMI).

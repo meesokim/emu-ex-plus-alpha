@@ -19,17 +19,12 @@
 #include <emuframework/EmuSystem.hh>
 #include <emuframework/EmuApp.hh>
 
-using EmuNameFilterFunc = bool(*)(const char *name);
-
 class EmuFilePicker : public FSPicker
 {
 public:
-	static EmuNameFilterFunc defaultFsFilter;
-	static EmuNameFilterFunc defaultBenchmarkFsFilter;
-
-	EmuFilePicker(Base::Window &win): FSPicker(win) {}
-	void init(bool pickingDir, EmuNameFilterFunc filter = defaultFsFilter, bool singleDir = false);
-	void initForBenchmark(bool singleDir = false);
+	EmuFilePicker(Base::Window &win, const char *startingPath, bool pickingDir, EmuSystem::NameFilterFunc filter, bool singleDir = false);
+	static EmuFilePicker *makeForBenchmarking(Base::Window &win, bool singleDir = false);
+	static EmuFilePicker *makeForLoading(Base::Window &win, bool singleDir = false);
 	void inputEvent(Input::Event e) override;
 };
 
@@ -39,5 +34,6 @@ public:
 	static void onSelectFile(const char* name, Input::Event e);
 };
 
+void loadGameComplete(bool tryAutoState, bool addToRecent);
 void loadGameCompleteFromFilePicker(uint result, Input::Event e);
 bool hasArchiveExtension(const char *name);

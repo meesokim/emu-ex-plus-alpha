@@ -1,6 +1,5 @@
 ENV := ios
 CROSS_COMPILE := 1
-binStatic := 1
 
 ifndef target
  target = $(metadata_exec)
@@ -23,12 +22,14 @@ ifeq ($(origin CC), default)
 endif
 include $(buildSysPath)/clang.mk
 
+linkLoadableModuleAction = -bundle -flat_namespace -undefined suppress
+
 ifdef RELEASE
  CPPFLAGS += -DNS_BLOCK_ASSERTIONS
 endif
 
 OBJCFLAGS += -fobjc-arc
-LDFLAGS += -fobjc-arc
+LDFLAGS_SYSTEM += -fobjc-arc
 
 XCODE_PATH := $(shell xcode-select --print-path)
 ifeq ($(ARCH),x86)
@@ -54,7 +55,7 @@ else
  IOS_FLAGS = -isysroot $(IOS_SYSROOT) -miphoneos-version-min=$(minIOSVer)
 endif
 CPPFLAGS += $(IOS_FLAGS)
-LDFLAGS += $(IOS_FLAGS)
+LDFLAGS_SYSTEM += $(IOS_FLAGS)
 
 ifeq ($(SUBARCH),armv6)
  ifdef iosNoDeadStripArmv6
@@ -62,13 +63,14 @@ ifeq ($(SUBARCH),armv6)
  endif
 endif
 ifndef ios_noDeadStrip
- LDFLAGS += -dead_strip
+ LDFLAGS_SYSTEM += -dead_strip
 endif
 ifdef RELEASE
- LDFLAGS += -Wl,-S,-x,-dead_strip_dylibs,-no_pie
+ LDFLAGS_SYSTEM += -Wl,-S,-x,-dead_strip_dylibs
 else
- LDFLAGS += -Wl,-x,-dead_strip_dylibs,-no_pie
+ LDFLAGS_SYSTEM += -Wl,-x,-dead_strip_dylibs
 endif
+LDFLAGS += -Wl,-no_pie
 
 # clang SVN doesn't seem to handle ASM properly so use as directly
 AS := as

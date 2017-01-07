@@ -87,7 +87,8 @@ static const char *texAlphaReplaceFragShaderSrc =
 
 #ifdef CONFIG_GFX_OPENGL_MULTIPLE_TEXTURE_TARGETS
 static const char *texExternalFragShaderSrc =
-"#extension GL_OES_EGL_image_external : require\n"
+"#extension GL_OES_EGL_image_external : enable\n"
+"#extension GL_OES_EGL_image_external_essl3 : enable\n"
 "FRAGCOLOR_DEF "
 "in lowp vec4 colorOut; "
 "in lowp vec2 texUVOut; "
@@ -98,7 +99,8 @@ static const char *texExternalFragShaderSrc =
 ;
 
 static const char *texExternalReplaceFragShaderSrc =
-"#extension GL_OES_EGL_image_external : require\n"
+"#extension GL_OES_EGL_image_external : enable\n"
+"#extension GL_OES_EGL_image_external_essl3 : enable\n"
 "FRAGCOLOR_DEF "
 "in lowp vec2 texUVOut; "
 "uniform lowp samplerExternalOES tex; "
@@ -563,7 +565,7 @@ bool DefaultTexExternalReplaceProgram::compile()
 		// Adreno 320 compiler missing texture2D for external textures with GLSL 3.0 ES
 		logWarn("retrying compile with Adreno GLSL 3.0 ES work-around");
 		const char *fragSrc[]{"#define texture2D texture\n", texExternalReplaceFragShaderSrc};
-		compileDefaultProgram(*this, fragSrc, sizeofArray(fragSrc));
+		compileDefaultProgram(*this, fragSrc, IG::size(fragSrc));
 	}
 	return true;
 	#else
@@ -598,7 +600,7 @@ bool DefaultTexExternalProgram::compile()
 		// Adreno 320 compiler missing texture2D for external textures with GLSL 3.0 ES
 		logWarn("retrying compile with Adreno GLSL 3.0 ES work-around");
 		const char *fragSrc[]{"#define texture2D texture\n", texExternalFragShaderSrc};
-		compileDefaultProgram(*this, fragSrc, sizeofArray(fragSrc));
+		compileDefaultProgram(*this, fragSrc, IG::size(fragSrc));
 	}
 	return true;
 	#else

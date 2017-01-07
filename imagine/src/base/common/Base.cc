@@ -28,6 +28,7 @@
 #endif
 #include <imagine/logger/logger.h>
 #include <imagine/time/Time.hh>
+#include <imagine/mem/mem.h>
 
 namespace Base
 {
@@ -41,20 +42,6 @@ static ExitDelegate onExit_;
 
 void engineInit()
 {
-	initPageSize();
-	#if defined __unix__ || (defined __APPLE__ && !TARGET_OS_IPHONE)
-	struct rlimit stack;
-	getrlimit(RLIMIT_STACK, &stack);
-	stack.rlim_cur = 16 * 1024 * 1024;
-	assert(stack.rlim_cur <= stack.rlim_max);
-	setrlimit(RLIMIT_STACK, &stack);
-	if(Config::DEBUG_BUILD)
-	{
-		getrlimit(RLIMIT_STACK, &stack);
-		logMsg("stack limit %u:%u", (uint)stack.rlim_cur, (uint)stack.rlim_max);
-	}
-	#endif
-
 	logDMsg("%s", copyright);
 	logDMsg("compiled on %s %s", __DATE__, __TIME__);
 	mem_init();
@@ -143,7 +130,7 @@ bool orientationIsSideways(uint o)
 
 uint validateOrientationMask(uint oMask)
 {
-	if(bit_numSet(oMask & VIEW_ROTATE_ALL) == 0)
+	if(IG::bitsSet(oMask & VIEW_ROTATE_ALL) == 0)
 	{
 		// use default when none of the orientation bits are set
 		oMask = defaultSystemOrientations();

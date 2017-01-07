@@ -16,25 +16,18 @@
 #include <algorithm>
 #include <cctype>
 #include <imagine/logger/logger.h>
-#include <imagine/resource/face/ResourceFace.hh>
 #include <imagine/gfx/GfxText.hh>
-#include <imagine/util/strings.h>
+#include <imagine/util/math/int.hh>
+#include <imagine/mem/mem.h>
 
 namespace Gfx
 {
 
-void Text::deinit()
+Text::~Text()
 {
-	spaceSize = 0;
-	nominalHeight = 0;
-	yLineStart = 0;
-	xSize = ySize = 0;
-	chars = 0;
-	lines = 0;
 	if(lineInfo)
 	{
 		mem_free(lineInfo);
-		lineInfo = nullptr;
 	}
 }
 
@@ -44,13 +37,13 @@ void Text::setString(const char *str)
 	this->str = str;
 }
 
-void Text::setFace(ResourceFace *face)
+void Text::setFace(GlyphTextureSet *face)
 {
 	assert(face);
 	this->face = face;
 }
 
-static GC xSizeOfChar(ResourceFace *face, int c, GC spaceX, const ProjectionPlane &projP)
+static GC xSizeOfChar(GlyphTextureSet *face, int c, GC spaceX, const ProjectionPlane &projP)
 {
 	assert(c != '\0');
 	if(c == ' ')

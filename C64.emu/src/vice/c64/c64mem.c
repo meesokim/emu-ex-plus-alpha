@@ -4,6 +4,7 @@
  * Written by
  *  Andreas Boose <viceteam@t-online.de>
  *  Ettore Perazzoli <ettore@comm2000.it>
+ *  Marco van den Heuvel <blackystardust68@yahoo.com>
  *
  * This file is part of VICE, the Versatile Commodore Emulator.
  * See README for copyright notice.
@@ -42,6 +43,7 @@
 #include "c64memlimit.h"
 #include "c64memrom.h"
 #include "c64pla.h"
+#include "c64ui.h"
 #include "c64cartmem.h"
 #include "cartio.h"
 #include "cartridge.h"
@@ -114,6 +116,9 @@ static int mem_config;
 
 /* Tape sense status: 1 = some button pressed, 0 = no buttons pressed.  */
 static int tape_sense = 0;
+
+static int tape_write_in = 0;
+static int tape_motor_in = 0;
 
 /* Current watchpoint state. 1 = watchpoints active, 0 = no watchpoints */
 static int watchpoints_active;
@@ -204,7 +209,7 @@ void mem_pla_config_changed(void)
 {
     mem_config = (((~pport.dir | pport.data) & 0x7) | (export.exrom << 3) | (export.game << 4));
 
-    c64pla_config_changed(tape_sense, 1, 0x17);
+    c64pla_config_changed(tape_sense, tape_write_in, tape_motor_in, 1, 0x17);
 
     if (watchpoints_active) {
         _mem_read_tab_ptr = mem_read_tab_watch;
@@ -797,6 +802,20 @@ void mem_set_tape_sense(int sense)
     mem_pla_config_changed();
 }
 
+/* Set the tape write in.  */
+void mem_set_tape_write_in(int val)
+{
+    tape_write_in = val;
+    mem_pla_config_changed();
+}
+
+/* Set the tape motor in.  */
+void mem_set_tape_motor_in(int val)
+{
+    tape_motor_in = val;
+    mem_pla_config_changed();
+}
+
 /* ------------------------------------------------------------------------- */
 
 /* FIXME: this part needs to be checked.  */
@@ -1092,7 +1111,7 @@ void mem_bank_write(int bank, WORD addr, BYTE byte, void *context)
     mem_ram[addr] = byte;
 }
 
-static int mem_dump_io(WORD addr)
+static int mem_dump_io(void *context, WORD addr)
 {
     if ((addr >= 0xdc00) && (addr <= 0xdc3f)) {
         return ciacore_dump(machine_context.cia1);
@@ -1106,8 +1125,8 @@ mem_ioreg_list_t *mem_ioreg_list_get(void *context)
 {
     mem_ioreg_list_t *mem_ioreg_list = NULL;
 
-    mon_ioreg_add_list(&mem_ioreg_list, "CIA1", 0xdc00, 0xdc0f, mem_dump_io);
-    mon_ioreg_add_list(&mem_ioreg_list, "CIA2", 0xdd00, 0xdd0f, mem_dump_io);
+    mon_ioreg_add_list(&mem_ioreg_list, "CIA1", 0xdc00, 0xdc0f, mem_dump_io, NULL);
+    mon_ioreg_add_list(&mem_ioreg_list, "CIA2", 0xdd00, 0xdd0f, mem_dump_io, NULL);
 
     io_source_ioreg_add_list(&mem_ioreg_list);
 
@@ -1132,4 +1151,24 @@ void mem_color_ram_to_snapshot(BYTE *color_ram)
 void mem_color_ram_from_snapshot(BYTE *color_ram)
 {
     memcpy(mem_color_ram, color_ram, 0x400);
+}
+
+/* ------------------------------------------------------------------------- */
+
+/* UI functions (used to distinguish between x64 and x64sc) */
+#ifdef USE_BEOS_UI
+int c64_mem_ui_init_early(void)
+{
+    return c64ui_init_early();
+}
+#endif
+
+int c64_mem_ui_init(void)
+{
+    return c64ui_init();
+}
+
+void c64_mem_ui_shutdown(void)
+{
+    c64ui_shutdown();
 }

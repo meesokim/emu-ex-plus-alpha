@@ -209,7 +209,7 @@ bool AndroidBluetoothAdapter::openDefault()
 			{"onBTOn", "(Z)V", (void *)&turnOnResult}
 		};
 
-		env->RegisterNatives(jBaseActivityCls, activityMethods, sizeofArray(activityMethods));
+		env->RegisterNatives(jBaseActivityCls, activityMethods, IG::size(activityMethods));
 	}
 
 	logMsg("opening default BT adapter");
@@ -225,7 +225,7 @@ bool AndroidBluetoothAdapter::openDefault()
 	{
 		int ret = pipe(statusPipe);
 		assert(ret == 0);
-		ret = ALooper_addFd(Base::activityLooper(), statusPipe[0], ALOOPER_POLL_CALLBACK, ALOOPER_EVENT_INPUT,
+		ret = ALooper_addFd(Base::EventLoop::forThread().nativeObject(), statusPipe[0], ALOOPER_POLL_CALLBACK, ALOOPER_EVENT_INPUT,
 			[](int fd, int events, void* data)
 			{
 				if(events & Base::POLLEV_ERR)
@@ -401,16 +401,16 @@ void AndroidBluetoothSocket::onStatusDelegateMessage(int status)
 	{
 		if(nativeFd != -1)
 		{
-			fdSrc.init(nativeFd,
+			fdSrc = {nativeFd, {},
 				[this](int fd, int events)
 				{
 					return readPendingData(events);
-				});
+				}};
 		}
 		else
 		{
 			logMsg("starting read thread");
-			IG::runOnThread(
+			IG::makeDetachedThread(
 				[this]()
 				{
 					if(Config::DEBUG_BUILD)
@@ -423,7 +423,7 @@ void AndroidBluetoothSocket::onStatusDelegateMessage(int status)
 						return;
 					}
 
-					auto looper = Base::activityLooper();
+					auto looper = Base::EventLoop::forThread().nativeObject();
 					int dataPipe[2];
 					{
 						int ret = pipe(dataPipe);
@@ -433,7 +433,7 @@ void AndroidBluetoothSocket::onStatusDelegateMessage(int status)
 							{
 								if(events & Base::POLLEV_ERR)
 									return 0;
-								auto socket = *((AndroidBluetoothSocket*)data);
+								auto &socket = *((AndroidBluetoothSocket*)data);
 								while(fd_bytesReadable(fd))
 								{
 									uint16 size;
@@ -549,12 +549,12 @@ static int nativeFdForSocket(JNIEnv *env, jobject btSocket)
 
 CallResult AndroidBluetoothSocket::openSocket(BluetoothAddr bdaddr, uint channel, bool l2cap)
 {
-	ba2str(&bdaddr, addrStr);
-	var_selfs(channel);
+	ba2str(bdaddr, addrStr);
+	this->channel = channel;
 	isL2cap = l2cap;
 	sem_init(&connectSem, 0, 0);
 	isConnecting = true;
-	IG::runOnThread(
+	IG::makeDetachedThread(
 		[this]()
 		{
 			logMsg("in connect thread %d", gettid());
@@ -617,8 +617,7 @@ void AndroidBluetoothSocket::close()
 		logMsg("closing socket");
 		if(nativeFd != -1)
 		{
-			//Base::removePollEvent(nativeFd);
-			fdSrc.deinit();
+			fdSrc.removeFromEventLoop();
 			nativeFd = -1; // BluetoothSocket closes the FD
 		}
 		isClosing = 1;

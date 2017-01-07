@@ -15,19 +15,18 @@
 	You should have received a copy of the GNU General Public License
 	along with Imagine.  If not, see <http://www.gnu.org/licenses/> */
 
-#include <imagine/engine-globals.h>
+#include <imagine/config/defs.hh>
+#include <assert.h>
 #include <pthread.h>
 
 namespace IG
 {
 
 template<class F>
-static void runOnThread(F func)
+static pthread_t makePThread(F func)
 {
-	pthread_attr_t attr;
-	pthread_attr_init(&attr);
-	pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_DETACHED);
 	int res;
+	pthread_t id;
 	if(sizeof(F) <= sizeof(void*))
 	{
 		// inline function object data into the void* parameter
@@ -37,8 +36,7 @@ static void runOnThread(F func)
 			void *voidPtr;
 		};
 		FuncData funcData{func};
-		pthread_t id;
-		res = pthread_create(&id, &attr,
+		res = pthread_create(&id, nullptr,
 			[](void *arg) -> void*
 			{
 				((FuncData*)(&arg))->func();
@@ -48,8 +46,7 @@ static void runOnThread(F func)
 	else
 	{
 		void *funcPtr = new F(func);
-		pthread_t id;
-		res = pthread_create(&id, &attr,
+		res = pthread_create(&id, nullptr,
 			[](void *arg) -> void*
 			{
 				auto funcPtr = (F*)arg;
@@ -63,28 +60,24 @@ static void runOnThread(F func)
 	{
 		bug_exit("error in pthread create");
 	}
+	return id;
 }
 
-class PThreadMutex
+class PThread
 {
 protected:
-	pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
+	pthread_t id_{};
 
 public:
-	pthread_mutex_t &nativeObject()
+	constexpr PThread() {}
+	template<class Func>
+	explicit PThread(Func&& f)
 	{
-		return mutex;
+		id_ = makePThread(f);
 	}
 };
 
-using MutexImpl = PThreadMutex;
-
-class PThreadConditionVar
-{
-protected:
-	pthread_cond_t cond = PTHREAD_COND_INITIALIZER;
-};
-
-using ConditionVarImpl = PThreadConditionVar;
+using ThreadIDImpl = pthread_t;
+using ThreadImpl = PThread;
 
 }

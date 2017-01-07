@@ -15,7 +15,11 @@
 	You should have received a copy of the GNU General Public License
 	along with Imagine.  If not, see <http://www.gnu.org/licenses/> */
 
-#include <imagine/util/utility.h>
+#ifdef __cplusplus
+#include <imagine/util/iterator.hh>
+#include <imagine/util/typeTraits.hh>
+#include <algorithm>
+#endif
 
 // integer iteration
 // 0 to [counts] - 1, i_s caches the value of counts (type of value is maintained)
@@ -29,45 +33,58 @@
 
 #ifdef __cplusplus
 
-// when added after a for-loop initializer, makes sure the loop runs only once
-#define forLoopExecOnceDummy *DMY_VAR = NULL; DMY_VAR == NULL; DMY_VAR++
-
-// iterates over elements of array [a] with the current element pointer label 'e'
-// array number of elements can be accessed as 'e'_s
-// array index can be accessed as 'e'_i
-#define forEachInArray(a, e) \
-for(typeof(*a) *e = a, forLoopExecOnceDummy) \
-for(typeof(sizeofArray(a)) e ## _i = 0, e ## _s = sizeofArray(a); e ## _i < e ## _s; e ## _i++, e++ )
-
-// iterates over elements of array [a] with the current element dereferenced label 'e'
-// array number of elements can be accessed as 'e'_s
-// array index can be accessed as 'e'_i, current element pointer label 'e'_p
-
-#define forEachDInArray(a, e) \
-for(size_t e ## _s  = sizeofArray(a), forLoopExecOnceDummy) \
-iterateTimes(sizeofArray(a), e ## _i) \
-for(typeof(*a) e = a[e ## _i], forLoopExecOnceDummy)
-
-template <class T, size_t S>
-static bool equalsAny(const T val, const T (&possible)[S])
+namespace IG
 {
-	iterateTimes(S, i)
-	{
-		if(val == possible[i])
-			return 1;
-	}
-	return 0;
+
+template <class T>
+static constexpr T const& cmax(const T& a, const T& b)
+{
+	return (b < a) ? a : b;
 }
 
-template <class T, class S>
-static bool equalsAny(const T val, const T possible[], S num)
+template <class T>
+static constexpr T const& cmin(const T& a, const T& b)
 {
-	iterateTimes(num, i)
-	{
-		if(val == possible[i])
-			return 1;
-	}
-	return 0;
+	return (a < b) ? a : b;
+}
+
+template <class InputIterator1, class Size, class InputIterator2>
+static bool equal_n(InputIterator1 first1, Size size, InputIterator2 first2)
+{
+	return std::equal(first1, first1 + size, first2);
+}
+
+template <class C, class V>
+static void fillData(C &c, const V &val)
+{
+	std::fill_n(IG::data(c), IG::size(c), val);
+}
+
+template <class C>
+static void fillData(C &c)
+{
+	fillData(c, typeof(*IG::data(c)){});
+}
+
+template <class C, class UnaryPredicate>
+static auto findData_if(C &c, UnaryPredicate pred) -> decltype(IG::data(c))
+{
+	return std::find_if(IG::data(c), IG::data(c) + IG::size(c), pred);
+}
+
+template <class C, class V>
+static bool contains(C c, const V& val)
+{
+	return std::find(c.begin(), c.end(), val) != c.end();
+}
+
+template <class T>
+static void setLinked(T &var, T newVal, T &linkedVar)
+{
+	linkedVar += newVal - var;
+	var = newVal;
+}
+
 }
 
 #endif

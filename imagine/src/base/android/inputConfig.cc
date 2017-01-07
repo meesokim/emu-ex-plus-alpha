@@ -20,13 +20,14 @@
 #include <imagine/base/Timer.hh>
 #include <imagine/logger/logger.h>
 #include <imagine/util/fd-utils.h>
+#include <imagine/util/algorithm.h>
 #include "internal.hh"
 #include "android.hh"
 #include "../../input/private.hh"
 #include "AndroidInputDevice.hh"
 
 #if __ANDROID_API__ < 12
-float (__NDK_FPABI__ *AMotionEvent_getAxisValue)(const AInputEvent* motion_event, int32_t axis, size_t pointer_index){};
+float (*AMotionEvent_getAxisValue)(const AInputEvent* motion_event, int32_t axis, size_t pointer_index){};
 #endif
 
 namespace Input
@@ -137,20 +138,6 @@ void changeInputConfig(AConfiguration *config)
 	setHardKeyboardState(hasXperiaPlayGamepad() ? navState : hardKeyboardState);
 }
 
-static const char *androidEventEnumToStr(uint e)
-{
-	switch(e)
-	{
-		case AMOTION_EVENT_ACTION_DOWN: return "Down";
-		case AMOTION_EVENT_ACTION_UP: return "Up";
-		case AMOTION_EVENT_ACTION_MOVE: return "Move";
-		case AMOTION_EVENT_ACTION_CANCEL: return "Cancel";
-		case AMOTION_EVENT_ACTION_POINTER_DOWN: return "PDown";
-		case AMOTION_EVENT_ACTION_POINTER_UP: return "PUp";
-	}
-	return "Unknown";
-}
-
 void setKeyRepeat(bool on)
 {
 	setAllowKeyRepeats(on);
@@ -193,7 +180,7 @@ AndroidInputDevice::AndroidInputDevice(JNIEnv* env, AInputDeviceJ aDev, uint enu
 	{
 		type_ |= Device::TYPE_BIT_VIRTUAL;
 	}
-	if(bit_isMaskSet(src, AInputDeviceJ::SOURCE_GAMEPAD))
+	if(IG::isBitMaskSet(src, AInputDeviceJ::SOURCE_GAMEPAD))
 	{
 		bool isGamepad = 1;
 		if(Config::MACHINE_IS_GENERIC_ARMV7 && strstr(name, "-zeus"))
@@ -239,7 +226,7 @@ AndroidInputDevice::AndroidInputDevice(JNIEnv* env, AInputDeviceJ aDev, uint enu
 			type_ |= Device::TYPE_BIT_GAMEPAD;
 		}
 	}
-	if(bit_isMaskSet(src, AInputDeviceJ::SOURCE_KEYBOARD))
+	if(IG::isBitMaskSet(src, AInputDeviceJ::SOURCE_KEYBOARD))
 	{
 		auto kbType = aDev.getKeyboardType(env);
 		// Classify full alphabetic keyboards, and also devices with other keyboard
@@ -252,7 +239,7 @@ AndroidInputDevice::AndroidInputDevice(JNIEnv* env, AInputDeviceJ aDev, uint enu
 			logMsg("has keyboard type: %s", inputDeviceKeyboardTypeToStr(kbType));
 		}
 	}
-	if(bit_isMaskSet(src, AInputDeviceJ::SOURCE_JOYSTICK))
+	if(IG::isBitMaskSet(src, AInputDeviceJ::SOURCE_JOYSTICK))
 	{
 		type_ |= Device::TYPE_BIT_JOYSTICK;
 		logMsg("detected a joystick");
@@ -408,7 +395,7 @@ bool Device::anyTypeBitsPresent(uint typeBits)
 				return true;
 			}
 		}
-		unsetBits(typeBits, TYPE_BIT_KEYBOARD); // ignore keyboards in device list
+		typeBits = IG::clearBits(typeBits, TYPE_BIT_KEYBOARD); // ignore keyboards in device list
 	}
 
 	if(Config::MACHINE_IS_GENERIC_ARMV7 && hasXperiaPlayGamepad() &&
@@ -586,7 +573,7 @@ static void setupDevices(JNIEnv* env)
 	}
 }
 
-CallResult init()
+void init()
 {
 	if(Base::androidSDK() >= 12)
 	{
@@ -644,7 +631,7 @@ CallResult init()
 					})
 				}
 			};
-			env->RegisterNatives(inputDeviceListenerHelperCls, method, sizeofArray(method));
+			env->RegisterNatives(inputDeviceListenerHelperCls, method, IG::size(method));
 		}
 		else
 		{
@@ -653,7 +640,7 @@ CallResult init()
 			if(inputDevNotifyFd >= 0)
 			{
 				auto watch = inotify_add_watch(inputDevNotifyFd, "/dev/input", IN_CREATE | IN_DELETE );
-				int ret = ALooper_addFd(Base::activityLooper(), inputDevNotifyFd, ALOOPER_POLL_CALLBACK, ALOOPER_EVENT_INPUT,
+				int ret = ALooper_addFd(Base::EventLoop::forThread().nativeObject(), inputDevNotifyFd, ALOOPER_POLL_CALLBACK, ALOOPER_EVENT_INPUT,
 					[](int fd, int events, void* data)
 					{
 						logMsg("got inotify event");
@@ -665,7 +652,7 @@ CallResult init()
 								[]()
 								{
 									devicesChanged(Base::jEnv());
-								}, 250);
+								}, 250, {});
 						}
 						return 1;
 					}, nullptr);
@@ -700,7 +687,6 @@ CallResult init()
 		addDevice(genericKeyDev);
 		builtinKeyboardDev = &genericKeyDev;
 	}
-	return OK;
 }
 
 }
