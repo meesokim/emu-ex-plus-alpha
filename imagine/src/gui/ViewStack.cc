@@ -74,17 +74,15 @@ void BasicViewController::place()
 	view->place();
 }
 
-void BasicViewController::inputEvent(Input::Event e)
+bool BasicViewController::inputEvent(Input::Event e)
 {
-	view->inputEvent(e);
+	return view->inputEvent(e);
 }
 
 void BasicViewController::draw()
 {
 	view->draw();
 }
-
-void BasicViewController::init(const Base::Window &win) {}
 
 void ViewStack::setNavView(std::unique_ptr<NavView> nav)
 {
@@ -117,27 +115,27 @@ void ViewStack::place()
 	{
 		nav->setTitle(top().name());
 		nav->viewRect().setPosRel({viewRect.x, viewRect.y}, {viewRect.xSize(), IG::makeEvenRoundedUp(int(nav->titleFace()->nominalHeight()*(double)1.75))}, LT2DO);
-		nav->place(projP);
+		nav->place(top().renderer(), projP);
 		customViewRect.y += nav->viewRect().ySize();
 	}
 	top().setViewRect(customViewRect, projP);
 	top().place();
 }
 
-void ViewStack::inputEvent(Input::Event e)
+bool ViewStack::inputEvent(Input::Event e)
 {
-	if(navViewIsActive() && e.isPointer() && nav->viewRect().overlaps({e.x, e.y}))
+	if(navViewIsActive() && e.isPointer() && nav->viewRect().overlaps(e.pos()))
 	{
-		nav->inputEvent(e);
+		return nav->inputEvent(e);
 	}
-	top().inputEvent(e);
+	return top().inputEvent(e);
 }
 
 void ViewStack::draw()
 {
 	top().draw();
 	if(navViewIsActive())
-		nav->draw(top().window(), projP);
+		nav->draw(top().renderer(), top().window(), projP);
 }
 
 void ViewStack::push(View &v, Input::Event e)

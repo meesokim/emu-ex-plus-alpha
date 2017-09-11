@@ -28,18 +28,33 @@ public:
 	bool multiLine = false;
 	Gfx::ProjectionPlane projP;
 
-	TextEntry() {}
-	CallResult init(const char *initText, Gfx::GlyphTextureSet *face, const Gfx::ProjectionPlane &projP);
+	TextEntry(const char *initText, Gfx::Renderer &r, Gfx::GlyphTextureSet *face, const Gfx::ProjectionPlane &projP);
 	void setAcceptingInput(bool on);
-	void inputEvent(Input::Event e);
-	void draw();
-	void place();
-	void place(IG::WindowRect rect, const Gfx::ProjectionPlane &projP);
+	bool inputEvent(Gfx::Renderer &r, Input::Event e);
+	void draw(Gfx::Renderer &r);
+	void place(Gfx::Renderer &r);
+	void place(Gfx::Renderer &r, IG::WindowRect rect, const Gfx::ProjectionPlane &projP);
 };
 
 class CollectTextInputView : public View
 {
 public:
+	// returning non-zero keeps text entry active on Android
+	using OnTextDelegate = DelegateFunc<uint (CollectTextInputView &view, const char *str)>;
+
+	CollectTextInputView(ViewAttachParams attach, const char *msgText, const char *initialContent,
+		Gfx::PixmapTexture *closeRes, OnTextDelegate onText, Gfx::GlyphTextureSet *face = &View::defaultFace);
+	CollectTextInputView(ViewAttachParams attach, const char *msgText,
+		Gfx::PixmapTexture *closeRes, OnTextDelegate onText, Gfx::GlyphTextureSet *face = &View::defaultFace):
+		CollectTextInputView(attach, msgText, "", closeRes, onText, face) {}
+	~CollectTextInputView() override;
+	IG::WindowRect &viewRect() override { return rect; }
+	void place() override;
+	bool inputEvent(Input::Event e) override;
+	void draw() override;
+	void onAddedToController(Input::Event e) override {}
+
+protected:
 	IG::WindowRect rect{};
 	IG::WindowRect cancelBtn{};
 	#ifndef CONFIG_BASE_ANDROID // TODO: cancel button doesn't work yet due to popup window not forwarding touch events to main window
@@ -47,24 +62,7 @@ public:
 	#endif
 	Gfx::Text message{};
 	#ifndef CONFIG_INPUT_SYSTEM_COLLECTS_TEXT
-	TextEntry textEntry{};
+	TextEntry textEntry;
 	#endif
-
-	// returning non-zero keeps text entry active on Android
-	using OnTextDelegate = DelegateFunc<uint (CollectTextInputView &view, const char *str)>;
 	OnTextDelegate onTextD{};
-	OnTextDelegate &onText() { return onTextD; }
-
-	CollectTextInputView(Base::Window &win): View("Text Entry", win) {}
-	~CollectTextInputView() override;
-	void init(const char *msgText, const char *initialContent, Gfx::PixmapTexture *closeRes, Gfx::GlyphTextureSet *face = &View::defaultFace);
-	void init(const char *msgText, Gfx::PixmapTexture *closeRes, Gfx::GlyphTextureSet *face = &View::defaultFace)
-	{
-		init(msgText, "", closeRes, face);
-	}
-	IG::WindowRect &viewRect() override { return rect; }
-	void place() override;
-	void inputEvent(Input::Event e) override;
-	void draw() override;
-	void onAddedToController(Input::Event e) override {}
 };

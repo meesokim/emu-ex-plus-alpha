@@ -38,21 +38,23 @@ uint64 MDFN_GetSettingUI(const char *name)
 		return 12;
 	if(string_equal(PCE_MODULE".slend", name))
 		return 235;
-	bug_exit("unhandled settingUI %s", name);
+	bug_unreachable("unhandled settingUI %s", name);
 	return 0;
 }
 
 int64 MDFN_GetSettingI(const char *name)
 {
-	bug_exit("unhandled settingI %s", name);
+	if(string_equal("filesys.state_comp_level", name))
+		return 6;
+	bug_unreachable("unhandled settingI %s", name);
 	return 0;
 }
 
-float MDFN_GetSettingF(const char *name)
+double MDFN_GetSettingF(const char *name)
 {
 	if(string_equal(PCE_MODULE".mouse_sensitivity", name))
 		return 0.50;
-	bug_exit("unhandled settingF %s", name);
+	bug_unreachable("unhandled settingF %s", name);
 	return 0;
 }
 
@@ -80,7 +82,7 @@ bool MDFN_GetSettingB(const char *name)
 		return 1;
 	if(string_equal("filesys.untrusted_fip_check", name))
 		return 0;
-	bug_exit("unhandled settingB %s", name);
+	bug_unreachable("unhandled settingB %s", name);
 	return 0;
 }
 
@@ -90,7 +92,7 @@ std::string MDFN_GetSettingS(const char *name)
 	{
 		return std::string("");
 	}
-	bug_exit("unhandled settingS %s", name);
+	bug_unreachable("unhandled settingS %s", name);
 	return 0;
 }
 
@@ -100,6 +102,7 @@ std::string MDFN_MakeFName(MakeFName_Type type, int id1, const char *cd1)
 	{
 		case MDFNMKF_STATE:
 		case MDFNMKF_SAV:
+		case MDFNMKF_SAVBACK:
 		{
 			assert(cd1);
 			std::string path(EmuSystem::savePath());
@@ -127,7 +130,7 @@ std::string MDFN_MakeFName(MakeFName_Type type, int id1, const char *cd1)
 			return path;
 		}
 		default:
-			bug_branch("%d", type);
+			bug_unreachable("type == %d", type);
 			return 0;
 	}
 }

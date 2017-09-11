@@ -89,7 +89,7 @@ ArchiveIO &ArchiveIO::operator=(ArchiveIO &&o)
 	return *this;
 }
 
-ArchiveIO::operator GenericIO()
+GenericIO ArchiveIO::makeGeneric()
 {
 	return GenericIO{*this};
 }
@@ -157,7 +157,7 @@ off_t ArchiveIO::seek(off_t offset, IO::SeekMode mode, std::error_code *ecOut)
 	}
 	if(!isSeekModeValid(mode))
 	{
-		bug_exit("invalid seek mode: %d", (int)mode);
+		logErr("invalid seek mode: %d", (int)mode);
 		if(ecOut)
 			*ecOut = {EINVAL, std::system_category()};
 		return -1;

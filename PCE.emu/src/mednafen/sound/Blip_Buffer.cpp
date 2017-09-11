@@ -1,11 +1,12 @@
 // Blip_Buffer 0.4.1. http://www.slack.net/~ant/
 
-#include <blip/Blip_Buffer.h>
+#include "Blip_Buffer.h"
 
 #include <assert.h>
 #include <limits.h>
 #include <string.h>
 #include <stdlib.h>
+#include <stdio.h>
 #include <math.h>
 
 /* Copyright (C) 2003-2006 Shay Green. This module is free software; you
@@ -148,6 +149,7 @@ void Blip_Buffer::bass_freq( int freq )
 		while ( (f >>= 1) && --shift ) { }
 	}
 	bass_shift_ = shift;
+	//printf("%d\n", bass_shift_);
 }
 
 void Blip_Buffer::end_frame( blip_time_t t )
@@ -252,7 +254,7 @@ static void gen_sinc( float* out, int count, double oversample, double treble, d
 		double d = 1.0 + rolloff * (rolloff - cos_angle - cos_angle);
 		double b = 2.0 - cos_angle - cos_angle;
 		double a = 1.0 - cos_angle - cos_nc_angle + cos_nc1_angle;
-		
+
 		out [i] = (float) ((a * d + c * b) / (b * d)); // a / b + c / d
 	}
 }
@@ -301,8 +303,10 @@ void Blip_Synth_::adjust_impulse()
 
 void Blip_Synth_::treble_eq( blip_eq_t const& eq )
 {
-	float fimpulse [blip_res / 2 * (blip_widest_impulse_ - 1) + blip_res * 2];
-	
+	// TODO: possible stack-use-after-scope false positive in AddressSanitizer,
+	//       doubled array size as work-around until cause found
+	float fimpulse [(blip_res / 2 * (blip_widest_impulse_ - 1) + blip_res * 2) * 2];
+
 	int const half_size = blip_res / 2 * (width - 1);
 	eq.generate( &fimpulse [blip_res], half_size );
 	

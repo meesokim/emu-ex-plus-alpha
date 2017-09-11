@@ -21,13 +21,9 @@
 #include <imagine/gui/TableView.hh>
 #include <imagine/audio/Audio.hh>
 #include <imagine/util/container/ArrayList.hh>
-#include <emuframework/EmuInput.hh>
-#include <emuframework/EmuOptions.hh>
 #include <emuframework/EmuApp.hh>
 #include <emuframework/FilePicker.hh>
 #include <imagine/gui/TextTableView.hh>
-void onCloseModalPopWorkDir(Input::Event e);
-void chdirFromFilePath(const char *path);
 
 class VideoOptionView : public TableView
 {
@@ -80,7 +76,7 @@ protected:
 	StaticArrayList<MenuItem*, 24> item{};
 
 public:
-	VideoOptionView(Base::Window &win, bool customMenu = false);
+	VideoOptionView(ViewAttachParams attach, bool customMenu = false);
 	void loadStockItems();
 };
 
@@ -103,7 +99,7 @@ protected:
 	StaticArrayList<MenuItem*, 12> item{};
 
 public:
-	AudioOptionView(Base::Window &win, bool customMenu = false);
+	AudioOptionView(ViewAttachParams attach, bool customMenu = false);
 	void loadStockItems();
 };
 
@@ -129,7 +125,7 @@ protected:
 	StaticArrayList<MenuItem*, 24> item{};
 
 public:
-	SystemOptionView(Base::Window &win, bool customMenu = false);
+	SystemOptionView(ViewAttachParams attach, bool customMenu = false);
 	void loadStockItems();
 };
 
@@ -160,7 +156,7 @@ protected:
 	StaticArrayList<MenuItem*, 20> item{};
 
 public:
-	GUIOptionView(Base::Window &win, bool customMenu = false);
+	GUIOptionView(ViewAttachParams attach, bool customMenu = false);
 	void loadStockItems();
 };
 
@@ -170,7 +166,7 @@ public:
 	using BiosChangeDelegate = DelegateFunc<void ()>;
 
 	BiosSelectMenu(const char *name, FS::PathString *biosPathStr, BiosChangeDelegate onBiosChange,
-		EmuSystem::NameFilterFunc fsFilter, Base::Window &win);
+		EmuSystem::NameFilterFunc fsFilter, ViewAttachParams attach);
 
 protected:
 	TextMenuItem selectFile{};
@@ -191,5 +187,5 @@ public:
 
 	constexpr FirmwarePathSelector() {}
 	void onClose(FSPicker &picker, Input::Event e);
-	void init(const char *name, Input::Event e);
+	void init(Gfx::Renderer &r, const char *name, Input::Event e);
 };

@@ -15,12 +15,13 @@
 
 #include <emuframework/StateSlotView.hh>
 #include <emuframework/EmuApp.hh>
+#include "private.hh"
 
-StateSlotView::StateSlotView(Base::Window &win):
+StateSlotView::StateSlotView(ViewAttachParams attach):
 	TableView
 	{
 		"State Slot",
-		win,
+		attach,
 		[this](const TableView &)
 		{
 			return stateSlots;

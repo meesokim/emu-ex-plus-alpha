@@ -26,19 +26,19 @@
 class BaseAlertView : public View
 {
 public:
-	BaseAlertView(Base::Window &win, const char *label, TableView::ItemsDelegate items, TableView::ItemDelegate item);
+	BaseAlertView(ViewAttachParams attach, const char *label, TableView::ItemsDelegate items, TableView::ItemDelegate item);
 	template <class CONTAINER>
-	BaseAlertView(Base::Window &win, const char *label, CONTAINER &item):
+	BaseAlertView(ViewAttachParams attach, const char *label, CONTAINER &item):
 		BaseAlertView
 		{
-			win,
+			attach,
 			label,
 			[&item](const TableView &) { return IG::size(item); },
 			[&item](const TableView &, uint idx) -> MenuItem& { return TableView::derefMenuItem(IG::data(item)[idx]); }
 		} {}
 	IG::WindowRect &viewRect() override { return rect; }
 	void place() override;
-	void inputEvent(Input::Event e) override;
+	bool inputEvent(Input::Event e) override;
 	void draw() override;
 	void onAddedToController(Input::Event e) override;
 	void setLabel(const char *label);
@@ -53,7 +53,7 @@ protected:
 class AlertView : public BaseAlertView
 {
 public:
-	AlertView(Base::Window &win, const char *label, uint menuItems);
+	AlertView(ViewAttachParams attach, const char *label, uint menuItems);
 	void setItem(uint idx, const char *name, TextMenuItem::SelectDelegate del);
 
 protected:
@@ -63,7 +63,22 @@ protected:
 class YesNoAlertView : public BaseAlertView
 {
 public:
-	YesNoAlertView(Base::Window &win, const char *label, const char *choice1 = {}, const char *choice2 = {});
+	YesNoAlertView(ViewAttachParams attach, const char *label, const char *yesStr, const char *noStr,
+		TextMenuItem::SelectDelegate onYes, TextMenuItem::SelectDelegate onNo);
+	template<class C = TextMenuItem::SelectDelegate, class C2 = TextMenuItem::SelectDelegate>
+	YesNoAlertView(ViewAttachParams attach, const char *label, const char *yesStr, const char *noStr,
+		C &&onYes, C2 &&onNo):
+			YesNoAlertView
+			{
+				attach,
+				label,
+				yesStr,
+				noStr,
+				TextMenuItem::wrapSelectDelegate(onYes),
+				TextMenuItem::wrapSelectDelegate(onNo)
+			} {}
+	YesNoAlertView(ViewAttachParams attach, const char *label, const char *yesStr = {}, const char *noStr = {}):
+		YesNoAlertView{attach, label, yesStr, noStr, {}, {}} {}
 	void setOnYes(TextMenuItem::SelectDelegate del);
 	template<class C>
 	void setOnYes(C &&del)
@@ -79,4 +94,5 @@ public:
 
 protected:
 	TextMenuItem yes, no;
+	TextMenuItem::SelectDelegate makeDefaultSelectDelegate();
 };

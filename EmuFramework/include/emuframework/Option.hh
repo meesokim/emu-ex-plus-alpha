@@ -20,9 +20,7 @@
 #include <imagine/bluetooth/sys.hh>
 #include <imagine/gui/View.hh>
 #include <imagine/util/2DOrigin.h>
-#include <emuframework/VideoImageOverlay.hh>
-#include <emuframework/EmuSystem.hh>
-#include <emuframework/Recent.hh>
+#include <imagine/util/string.h>
 #include <imagine/audio/Audio.hh>
 #include <imagine/logger/logger.h>
 
@@ -238,8 +236,8 @@ using Byte4Option = Option<OptionMethodVar<uint32>, uint32>;
 using Byte4s1Option = Option<OptionMethodVar<uint32>, uint8>;
 using DoubleOption = Option<OptionMethodVar<double>, double>;
 
-using OptionBackNavigation = Option<OptionMethodRef<template_ntype(View::needsBackControl)>, uint8>;
-using OptionSwappedGamepadConfirm = Option<OptionMethodRef<bool, Input::swappedGamepadConfirm>, uint8>;
+using OptionBackNavigation = Option<OptionMethodRef<bool, View::needsBackControl>, uint8>;
+using OptionSwappedGamepadConfirm = Option<OptionMethodFunc<bool, Input::swappedGamepadConfirm, Input::setSwappedGamepadConfirm>, uint8>;
 
 bool vControllerUseScaledCoordinates();
 void setVControllerUseScaledCoordinates(bool on);
@@ -335,43 +333,32 @@ struct OptionAspectRatio : public Option<OptionMethodVar<IG::Point2D<uint> > >
 
 struct OptionRecentGames : public OptionBase
 {
-	bool isDefault() const { return recentGameList.size() == 0; }
 	const uint16 key = CFGKEY_RECENT_GAMES;
 
-	bool writeToIO(IO &io)
-	{
-		logMsg("writing recent list");
-		std::error_code ec{};
-		io.writeVal(key, &ec);
-		for(auto &e : recentGameList)
-		{
-			uint len = strlen(e.path.data());
-			io.writeVal((uint16)len, &ec);
-			io.write(e.path.data(), len, &ec);
-		}
-		return true;
-	}
-
+	bool isDefault() const;
+	bool writeToIO(IO &io);
 	bool readFromIO(IO &io, uint readSize_);
-
-	uint ioSize()
-	{
-		uint strSizes = 0;
-		for(auto &e : recentGameList)
-		{
-			strSizes += 2;
-			strSizes += strlen(e.path.data());
-		}
-		return sizeof(key) + strSizes;
-	}
+	uint ioSize();
 };
 
 struct OptionVControllerLayoutPosition : public OptionBase
 {
 	const uint16 key = CFGKEY_VCONTROLLER_LAYOUT_POS;
 
-	bool isDefault() const override;
-	bool writeToIO(IO &io) override;
+	bool isDefault() const final;
+	bool writeToIO(IO &io) final;
 	bool readFromIO(IO &io, uint readSize_);
-	uint ioSize() override;
+	uint ioSize() final;
 };
+
+template<int MAX, class T>
+bool optionIsValidWithMax(T val)
+{
+	return val <= MAX;
+}
+
+template<int MIN, int MAX, class T>
+bool optionIsValidWithMinMax(T val)
+{
+	return val >= MIN && val <= MAX;
+}

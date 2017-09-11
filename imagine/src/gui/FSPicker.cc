@@ -20,13 +20,13 @@
 #include <imagine/util/math/int.hh>
 #include <string>
 
-FSPicker::FSPicker(Base::Window &win, Gfx::PixmapTexture *backRes, Gfx::PixmapTexture *closeRes,
+FSPicker::FSPicker(ViewAttachParams attach, Gfx::PixmapTexture *backRes, Gfx::PixmapTexture *closeRes,
 	FilterFunc filter,  bool singleDir, Gfx::GlyphTextureSet *face):
-	View{win},
+	View{attach},
 	filter{filter},
-	tbl{win, text},
+	tbl{attach, text},
 	faceRes{face},
-	navV{face, singleDir ? nullptr : backRes, closeRes},
+	navV{attach.renderer, face, singleDir ? nullptr : backRes, closeRes},
 	singleDir{singleDir}
 {
 	msgText = {msgStr.data(), face};
@@ -68,8 +68,8 @@ void FSPicker::place()
 	tableFrame.y2 -= navV.viewRect().ySize();
 	tbl.setViewRect(tableFrame, projP);
 	tbl.place();
-	navV.place(projP);
-	msgText.compile(projP);
+	navV.place(renderer(), projP);
+	msgText.compile(renderer(), projP);
 }
 
 void FSPicker::changeDirByInput(const char *path, bool forcePathChange, Input::Event e)
@@ -111,37 +111,38 @@ void FSPicker::setOnPathReadError(OnPathReadError del)
 	onPathReadError_ = del;
 }
 
-void FSPicker::inputEvent(Input::Event e)
+bool FSPicker::inputEvent(Input::Event e)
 {
-	if(e.isDefaultCancelButton() && e.state == Input::PUSHED)
+	if(e.isDefaultCancelButton() && e.state() == Input::PUSHED)
 	{
 		onClose_.callCopy(*this, e);
-		return;
+		return true;
 	}
-
-	const char* dirChange = 0;
-	if(!singleDir && e.state == Input::PUSHED && e.isDefaultLeftButton())
+	if(!singleDir && e.state() == Input::PUSHED && e.isDefaultLeftButton())
 	{
 		logMsg("going up a dir");
 		changeDirByInput(FS::dirname(currPath).data(), true, e);
+		return true;
 	}
 	else if(!singleDir && (e.pushedKey(Input::Keycode::GAME_B) || e.pushedKey(Input::Keycode::F1)))
 	{
 		changeDirByInput(Base::storagePath().data(), true, e);
+		return true;
 	}
-	else if(e.isPointer() && navV.viewRect().overlaps({e.x, e.y}) && !tbl.isDoingScrollGesture())
+	else if(e.isPointer() && navV.viewRect().overlaps(e.pos()) && !tbl.isDoingScrollGesture())
 	{
-		navV.inputEvent(e);
-		return;
+		return navV.inputEvent(e);
 	}
 	else
 	{
-		tbl.inputEvent(e);
+		return tbl.inputEvent(e);
 	}
+	return false;
 }
 
 void FSPicker::draw()
 {
+	auto &r = renderer();
 	if(dir.size())
 	{
 		tbl.draw();
@@ -149,14 +150,14 @@ void FSPicker::draw()
 	else
 	{
 		using namespace Gfx;
-		setColor(COLOR_WHITE);
-		texAlphaProgram.use(projP.makeTranslate());
+		r.setColor(COLOR_WHITE);
+		r.texAlphaProgram.use(r, projP.makeTranslate());
 		auto textRect = tbl.viewRect();
 		if(IG::isOdd(textRect.ySize()))
 			textRect.y2--;
-		msgText.draw(projP.unProjectRect(textRect).pos(C2DO), C2DO, projP);
+		msgText.draw(r, projP.unProjectRect(textRect).pos(C2DO), C2DO, projP);
 	}
-	navV.draw(window(), projP);
+	navV.draw(r, window(), projP);
 }
 
 void FSPicker::onAddedToController(Input::Event e)

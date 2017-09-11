@@ -14,6 +14,7 @@
 	along with PCE.emu.  If not, see <http://www.gnu.org/licenses/> */
 
 #include <emuframework/EmuApp.hh>
+#include <emuframework/EmuInput.hh>
 #include "internal.hh"
 
 enum
@@ -46,11 +47,13 @@ const bool EmuSystem::inputHasTriggerBtns = false;
 const bool EmuSystem::inputHasRevBtnLayout = false;
 bool EmuSystem::inputHasOptionsView = true;
 const uint EmuSystem::maxPlayers = 5;
+bool useSixButtonPad = false;
+uint playerBit = 13;
 
 void updateVControllerMapping(uint player, SysVController::Map &map)
 {
 	using namespace IG;
-	uint playerMask = player << 12;
+	uint playerMask = player << playerBit;
 	map[SysVController::F_ELEM] = bit(0) | playerMask;
 	map[SysVController::F_ELEM+1] = bit(1) | playerMask;
 	map[SysVController::F_ELEM+2] = bit(8) | playerMask;
@@ -76,7 +79,7 @@ uint EmuSystem::translateInputAction(uint input, bool &turbo)
 	turbo = 0;
 	assert(input >= pceKeyIdxUp);
 	uint player = (input - pceKeyIdxUp) / EmuControls::gamepadKeys;
-	uint playerMask = player << 12;
+	uint playerMask = player << playerBit;
 	input -= EmuControls::gamepadKeys * player;
 	using namespace IG;
 	switch(input)
@@ -91,27 +94,32 @@ uint EmuSystem::translateInputAction(uint input, bool &turbo)
 		case pceKeyIdxLeftDown: return bit(7) | bit(6) | playerMask;
 		case pceKeyIdxSelect: return bit(2) | playerMask;
 		case pceKeyIdxRun: return bit(3) | playerMask;
-		case pceKeyIdxITurbo: turbo = 1; // fall through to pceKeyIdxI
+		case pceKeyIdxITurbo: turbo = 1; [[fallthrough]];
 		case pceKeyIdxI: return bit(0) | playerMask;
-		case pceKeyIdxIITurbo: turbo = 1; // fall through to pceKeyIdxII
+		case pceKeyIdxIITurbo: turbo = 1; [[fallthrough]];
 		case pceKeyIdxII: return bit(1) | playerMask;
 		case pceKeyIdxIII: return bit(8) | playerMask;
 		case pceKeyIdxIV: return bit(9) | playerMask;
 		case pceKeyIdxV: return bit(10) | playerMask;
 		case pceKeyIdxVI: return bit(11) | playerMask;
-		default: bug_branch("%d", input);
+		default: bug_unreachable("input == %d", input);
 	}
 	return 0;
 }
 
 void EmuSystem::handleInputAction(uint state, uint emuKey)
 {
-	uint player = emuKey >> 12;
+	uint player = emuKey >> playerBit;
 	assert(player < maxPlayers);
 	inputBuff[player] = IG::setOrClearBits(inputBuff[player], (uint16)emuKey, state == Input::PUSHED);
 }
 
-void EmuSystem::clearInputBuffers()
+void EmuSystem::clearInputBuffers(EmuInputView &)
 {
-	IG::fillData(inputBuff);
+	inputBuff = {};
+	if(useSixButtonPad)
+	{
+		iterateTimes(2, i)
+			inputBuff[i] = IG::bit(12);
+	}
 }

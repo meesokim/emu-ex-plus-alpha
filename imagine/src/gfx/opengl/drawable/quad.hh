@@ -5,13 +5,12 @@ namespace Gfx
 {
 
 template<class Vtx>
-CallResult QuadGeneric<Vtx>::init(Coordinate x, Coordinate y, Coordinate x2, Coordinate y2, Coordinate x3, Coordinate y3, Coordinate x4, Coordinate y4)
+void QuadGeneric<Vtx>::init(Coordinate x, Coordinate y, Coordinate x2, Coordinate y2, Coordinate x3, Coordinate y3, Coordinate x4, Coordinate y4)
 {
 	v[0] = Vtx(x, y); //BL
 	v[1] = Vtx(x2, y2); //TL
 	v[2] = Vtx(x4, y4); //BR
 	v[3] = Vtx(x3, y3); //TR
-	return OK;
 }
 
 template<class Vtx>
@@ -30,12 +29,12 @@ void QuadGeneric<Vtx>::setPos(GC x, GC y, GC x2, GC y2, GC x3, GC y3, GC x4, GC 
 }
 
 template<class Vtx>
-void QuadGeneric<Vtx>::draw() const
+void QuadGeneric<Vtx>::draw(Renderer &r) const
 {
-	bindTempVertexBuffer();
-	vertexBufferData(v.data(), sizeof(v));
-	Vtx::bindAttribs(v.data());
-	drawPrimitives(Primitive::TRIANGLE_STRIP, 0, 4);
+	r.bindTempVertexBuffer();
+	r.vertexBufferData(v.data(), sizeof(v));
+	Vtx::bindAttribs(r, v.data());
+	r.drawPrimitives(Primitive::TRIANGLE_STRIP, 0, 4);
 }
 
 template class QuadGeneric<Vertex>;

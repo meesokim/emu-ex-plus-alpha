@@ -17,6 +17,8 @@
 #include <imagine/logger/logger.h>
 #include <imagine/base/Base.hh>
 #include <imagine/fs/FS.hh>
+#include <imagine/util/ScopeGuard.hh>
+#include <imagine/util/string.h>
 #include "dbus.hh"
 #include "../common/basePrivate.hh"
 #include "../x11/x11.hh"
@@ -119,11 +121,11 @@ bool requestPermission(Permission p)
 	return false;
 }
 
+#ifndef CONFIG_BASE_DBUS
 void setIdleDisplayPowerSave(bool on) {}
 
 void endIdleByUserActivity() {}
 
-#ifndef CONFIG_BASE_DBUS
 void registerInstance(const char *appID, int argc, char** argv) {}
 
 void setAcceptIPC(const char *appID, bool on) {}
@@ -136,6 +138,15 @@ void addLauncherIcon(const char *name, const char *path) {}
 bool hasVibrator() { return false; }
 
 void vibrate(uint ms) {}
+
+void exitWithErrorMessageVPrintf(int exitVal, const char *format, va_list args)
+{
+	std::array<char, 512> msg{};
+	auto result = vsnprintf(msg.data(), msg.size(), format, args);
+	auto cmd = string_makePrintf<1024>("zenity --warning --title='Exited with error' --text='%s'", msg.data());
+	auto cmdResult = system(cmd.data());
+	exit(exitVal);
+}
 
 }
 

@@ -105,7 +105,7 @@ private:
 	};
 
 public:
-	EmuSystemOptionView(Base::Window &win): SystemOptionView{win, true}
+	EmuSystemOptionView(ViewAttachParams attach): SystemOptionView{attach, true}
 	{
 		loadStockItems();
 		item.emplace_back(&bios);
@@ -129,7 +129,7 @@ class EmuGUIOptionView : public GUIOptionView
 	};
 
 public:
-	EmuGUIOptionView(Base::Window &win): GUIOptionView{win, true}
+	EmuGUIOptionView(ViewAttachParams attach): GUIOptionView{attach, true}
 	{
 		loadStockItems();
 		item.emplace_back(&listAll);
@@ -418,13 +418,14 @@ static const RomListEntry romlist[]
 
 static FS::PathString gameFilePath(const char *name)
 {
-	auto zipPath = FS::makePathStringPrintf("%s/%s.zip", optionLastLoadPath.val, name);
+	auto path = EmuApp::mediaSearchPath();
+	auto zipPath = FS::makePathStringPrintf("%s/%s.zip", path.data(), name);
 	if(FS::exists(zipPath))
 		return zipPath;
-	auto sZipPath = FS::makePathStringPrintf("%s/%s.7z", optionLastLoadPath.val, name);
+	auto sZipPath = FS::makePathStringPrintf("%s/%s.7z", path.data(), name);
 	if(FS::exists(sZipPath))
 		return sZipPath;
-	auto rarPath = FS::makePathStringPrintf("%s/%s.rar", optionLastLoadPath.val, name);
+	auto rarPath = FS::makePathStringPrintf("%s/%s.rar", path.data(), name);
 	if(FS::exists(rarPath))
 		return rarPath;
 	return {};
@@ -453,30 +454,21 @@ private:
 
 	std::vector<GameMenuItem> item{};
 
-	static void loadGame(const RomListEntry &entry)
+	static void loadGame(const RomListEntry &entry, Input::Event e, Gfx::Renderer &r)
 	{
-		EmuSystem::onLoadGameComplete() =
-			[](uint result, Input::Event e)
+		EmuApp::createSystemWithMedia({}, gameFilePath(entry.name).data(), "", e,
+			[&r](uint result, Input::Event e)
 			{
-				loadGameCompleteFromFilePicker(result, e);
-			};
-		auto res = EmuSystem::loadGameFromPath(gameFilePath(entry.name));
-		if(res == 1)
-		{
-			loadGameCompleteFromFilePicker(1, Input::Event{});
-		}
-		else if(res == 0)
-		{
-			EmuSystem::clearGamePaths();
-		}
+				EmuApp::loadGameCompleteFromFilePicker(r, result, e);
+			});
 	}
 
 public:
-	GameListView(Base::Window &win):
+	GameListView(ViewAttachParams attach):
 		TableView
 		{
 			"Game List",
-			win,
+			attach,
 			[this](const TableView &)
 			{
 				return item.size();
@@ -506,24 +498,24 @@ public:
 						{
 							if(entry.bugs)
 							{
-								auto &ynAlertView = *new YesNoAlertView{window(),
+								auto &ynAlertView = *new YesNoAlertView{attachParams(),
 									"This game doesn't yet work properly, load anyway?"};
 								ynAlertView.setOnYes(
 									[&entry](TextMenuItem &, View &view, Input::Event e)
 									{
 										view.dismiss();
-										loadGame(entry);
+										loadGame(entry, e, view.renderer());
 									});
-								modalViewController.pushAndShow(ynAlertView, e);
+								EmuApp::pushAndShowModalView(ynAlertView, e);
 							}
 							else
 							{
-								loadGame(entry);
+								loadGame(entry, e, renderer());
 							}
 						}
 						else
 						{
-							popup.printf(3, 1, "%s not present", entry.name);
+							EmuApp::printfMessage(3, 1, "%s not present", entry.name);
 						}
 						return true;
 					});
@@ -575,11 +567,11 @@ class UnibiosSwitchesView : public TableView
 	}
 
 public:
-	UnibiosSwitchesView(Base::Window &win):
+	UnibiosSwitchesView(ViewAttachParams attach):
 		TableView
 		{
 			"Unibios Switches",
-			win,
+			attach,
 			[this](const TableView &)
 			{
 				return 2;
@@ -612,14 +604,14 @@ private:
 		"Load Game From List",
 		[this](TextMenuItem &, View &, Input::Event e)
 		{
-			auto &gameListMenu = *new GameListView{window()};
+			auto &gameListMenu = *new GameListView{attachParams()};
 			if(!gameListMenu.games())
 			{
-				popup.post("No games found, use \"Load Game\" command to browse to a directory with valid games.", 6, 1);
+				EmuApp::postMessage(6, true, "No games found, use \"Load Game\" command to browse to a directory with valid games.");
 				delete &gameListMenu;
 				return;
 			}
-			viewStack.pushAndShow(gameListMenu, e);
+			pushAndShow(gameListMenu, e);
 		}
 	};
 
@@ -632,12 +624,12 @@ private:
 			{
 				if(item.active())
 				{
-					auto &unibiosSwitchesMenu = *new UnibiosSwitchesView{window()};
-					viewStack.pushAndShow(unibiosSwitchesMenu, e);
+					auto &unibiosSwitchesMenu = *new UnibiosSwitchesView{attachParams()};
+					pushAndShow(unibiosSwitchesMenu, e);
 				}
 				else
 				{
-					popup.post("Only used with Unibios");
+					EmuApp::postMessage("Only used with Unibios");
 				}
 			}
 		}
@@ -653,10 +645,10 @@ private:
 	}
 
 public:
-	EmuMenuView(Base::Window &win): MenuView{win, true}
+	EmuMenuView(ViewAttachParams attach): MenuView{attach, true}
 	{
 		reloadItems();
-		setOnMainMenuItemOptionChanged([this](){ reloadItems(); });
+		EmuApp::setOnMainMenuItemOptionChanged([this](){ reloadItems(); });
 	}
 
 	void onShow()
@@ -667,15 +659,15 @@ public:
 	}
 };
 
-View *EmuSystem::makeView(Base::Window &win, ViewID id)
+View *EmuSystem::makeView(ViewAttachParams attach, ViewID id)
 {
 	switch(id)
 	{
-		case ViewID::MAIN_MENU: return new EmuMenuView(win);
-		case ViewID::VIDEO_OPTIONS: return new VideoOptionView(win);
-		case ViewID::AUDIO_OPTIONS: return new AudioOptionView(win);
-		case ViewID::SYSTEM_OPTIONS: return new EmuSystemOptionView(win);
-		case ViewID::GUI_OPTIONS: return new GUIOptionView(win);
+		case ViewID::MAIN_MENU: return new EmuMenuView(attach);
+		case ViewID::VIDEO_OPTIONS: return new VideoOptionView(attach);
+		case ViewID::AUDIO_OPTIONS: return new AudioOptionView(attach);
+		case ViewID::SYSTEM_OPTIONS: return new EmuSystemOptionView(attach);
+		case ViewID::GUI_OPTIONS: return new GUIOptionView(attach);
 		default: return nullptr;
 	}
 }

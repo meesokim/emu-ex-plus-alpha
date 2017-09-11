@@ -39,33 +39,21 @@ static struct TouchState
 } m[Config::Input::MAX_POINTERS];
 static uint numCursors = IG::size(m);
 
-static AndroidInputDevice *sysDeviceForInputId(int osId)
-{
-	for(auto &e : sysInputDev)
-	{
-		if(e->osId == osId)
-		{
-			return e;
-		}
-	}
-	return nullptr;
-}
-
-static const Device *deviceForInputId(int osId)
+static AndroidInputDevice *deviceForInputId(int id)
 {
 	if(Base::androidSDK() < 12)
 	{
 		// no multi-input device support
-		return &genericKeyDev;
+		assumeExpr(sysInputDev.size());
+		return sysInputDev.front().get();
 	}
-	for(auto &e : sysInputDev)
+	auto existingIt = std::find_if(sysInputDev.cbegin(), sysInputDev.cend(),
+		[=](const auto &e) { return e->osId == id; });
+	if(existingIt == sysInputDev.end())
 	{
-		if(e->osId == osId)
-		{
-			return e;
-		}
+		return nullptr;
 	}
-	return nullptr;
+	return existingIt->get();
 }
 
 static Time makeTimeFromMotionEvent(AInputEvent *event)
@@ -271,7 +259,7 @@ static bool processInputEvent(AInputEvent* event, Base::Window &win)
 				}
 				case AINPUT_SOURCE_CLASS_JOYSTICK:
 				{
-					auto dev = sysDeviceForInputId(AInputEvent_getDeviceId(event));
+					auto dev = deviceForInputId(AInputEvent_getDeviceId(event));
 					if(unlikely(!dev))
 					{
 						logWarn("discarding joystick input from unknown device ID: %d", AInputEvent_getDeviceId(event));
@@ -311,11 +299,6 @@ static bool processInputEvent(AInputEvent* event, Base::Window &win)
 		{
 			auto keyCode = AKeyEvent_getKeyCode(event);
 			//logMsg("key event, code: %d id: %d source: 0x%X repeat: %d action: %d", keyCode, AInputEvent_getDeviceId(event), source, AKeyEvent_getRepeatCount(event), AKeyEvent_getAction(event));
-			if(!handleVolumeKeys &&
-				(keyCode == (int)Keycode::VOL_UP || keyCode == (int)Keycode::VOL_DOWN))
-			{
-				return 0;
-			}
 			auto keyWasRepeated =
 				[](int devID, int mostRecentKeyEventDevID, int repeatCount)
 				{
@@ -340,22 +323,29 @@ static bool processInputEvent(AInputEvent* event, Base::Window &win)
 				if(keyWasRepeated(devID, mostRecentKeyEventDevID, repeatCount))
 				{
 					//logMsg("skipped repeat key event");
-					return 1;
+					return true;
 				}
 			}
 			mostRecentKeyEventDevID = devID;
-			auto dev = deviceForInputId(devID);
+			const AndroidInputDevice *dev = deviceForInputId(devID);
 			if(unlikely(!dev))
 			{
-				assert(virtualDev);
-				//logWarn("re-mapping unknown device ID %d to Virtual", AInputEvent_getDeviceId(event));
-				dev = virtualDev;
+				if(virtualDev)
+				{
+					//logWarn("re-mapping key event unknown device ID %d to Virtual", devID);
+					dev = virtualDev;
+				}
+				else
+				{
+					logWarn("key event from unknown device ID:%d", devID);
+					return false;
+				}
 			}
 			auto metaState = AKeyEvent_getMetaState(event);
 			mapKeycodesForSpecialDevices(*dev, keyCode, metaState, event);
 			if(unlikely(!keyCode)) // ignore "unknown" key codes
 			{
-				return 0;
+				return false;
 			}
 			uint shiftState = metaState & AMETA_SHIFT_ON;
 			auto time = makeTimeFromKeyEvent(event);
@@ -365,13 +355,13 @@ static bool processInputEvent(AInputEvent* event, Base::Window &win)
 			{
 				cancelKeyRepeatTimer();
 				Key key = keyCode & 0x1ff;
-				Base::mainWindow().dispatchInputEvent({dev->enumId(), Event::MAP_SYSTEM, key, key, action, shiftState, time, dev});
+				return Base::mainWindow().dispatchInputEvent({dev->enumId(), Event::MAP_SYSTEM, key, key, action, shiftState, time, dev});
 			}
-			return 1;
+			return true;
 		}
 	}
 	logWarn("unhandled input event type %d", type);
-	return 0;
+	return false;
 }
 
 static void processInputCommon(AInputQueue *inputQueue, AInputEvent* event)

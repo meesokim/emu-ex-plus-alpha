@@ -32,21 +32,18 @@ void TextEntry::setAcceptingInput(bool on)
 	acceptingInput = on;
 }
 
-void TextEntry::inputEvent(Input::Event e)
+bool TextEntry::inputEvent(Gfx::Renderer &r, Input::Event e)
 {
-	if(e.isPointer() && e.pushed() && b.overlaps({e.x, e.y}))
+	if(e.isPointer() && e.pushed() && b.overlaps(e.pos()))
 	{
-		{
-			setAcceptingInput(1);
-		}
-		return;
+		setAcceptingInput(true);
+		return true;
 	}
-
-	if(acceptingInput && e.pushed() && e.map == e.MAP_SYSTEM)
+	if(acceptingInput && e.pushed() && e.map() == e.MAP_SYSTEM)
 	{
 		bool updateText = false;
 
-		if(e.button == Input::Keycode::BACK_SPACE)
+		if(e.mapKey() == Input::Keycode::BACK_SPACE)
 		{
 			int len = strlen(str);
 			if(len > 0)
@@ -64,8 +61,8 @@ void TextEntry::inputEvent(Input::Event e)
 				{
 					if(keyStr[0] == '\r' || keyStr[0] == '\n')
 					{
-						setAcceptingInput(0);
-						return;
+						setAcceptingInput(false);
+						return true;
 					}
 				}
 				string_cat(str, keyStr.data());
@@ -76,59 +73,64 @@ void TextEntry::inputEvent(Input::Event e)
 		if(updateText)
 		{
 			t.setString(str);
-			t.compile(projP);
+			t.compile(r, projP);
 			Base::mainWindow().postDraw();
 		}
+		return true;
 	}
+	return false;
 }
 
-void TextEntry::draw()
+void TextEntry::draw(Gfx::Renderer &r)
 {
 	using namespace Gfx;
-	texAlphaProgram.use();
-	t.draw(projP.unProjectRect(b).pos(LC2DO) + GP{TableView::globalXIndent, 0}, LC2DO, projP);
+	r.texAlphaProgram.use(r);
+	t.draw(r, projP.unProjectRect(b).pos(LC2DO) + GP{TableView::globalXIndent, 0}, LC2DO, projP);
 }
 
-void TextEntry::place()
+void TextEntry::place(Gfx::Renderer &r)
 {
-	t.compile(projP);
+	t.compile(r, projP);
 }
 
-void TextEntry::place(IG::WindowRect rect, const Gfx::ProjectionPlane &projP)
+void TextEntry::place(Gfx::Renderer &r, IG::WindowRect rect, const Gfx::ProjectionPlane &projP)
 {
 	this->projP = projP;
 	b = rect;
-	place();
+	place(r);
 }
 
-CallResult TextEntry::init(const char *initText, Gfx::GlyphTextureSet *face, const Gfx::ProjectionPlane &projP)
+TextEntry::TextEntry(const char *initText, Gfx::Renderer &r, Gfx::GlyphTextureSet *face, const Gfx::ProjectionPlane &projP)
 {
 	string_copy(str, initText);
 	t = {str, face};
-	t.compile(projP);
-	acceptingInput = 0;
-	return OK;
+	t.compile(r, projP);
 }
 
-void CollectTextInputView::init(const char *msgText, const char *initialContent, Gfx::PixmapTexture *closeRes, Gfx::GlyphTextureSet *face)
+CollectTextInputView::CollectTextInputView(ViewAttachParams attach, const char *msgText, const char *initialContent,
+	Gfx::PixmapTexture *closeRes, OnTextDelegate onText, Gfx::GlyphTextureSet *face):
+	View{attach},
+	#ifndef CONFIG_INPUT_SYSTEM_COLLECTS_TEXT
+	textEntry{initialContent, attach.renderer, face, projP},
+	#endif
+	onTextD{onText}
 {
 	#ifndef CONFIG_BASE_ANDROID
 	if(View::needsBackControl && closeRes)
 	{
 		cancelSpr.init({-.5, -.5, .5, .5}, *closeRes);
 		if(cancelSpr.compileDefaultProgram(Gfx::IMG_MODE_MODULATE))
-			Gfx::autoReleaseShaderCompiler();
+			renderer().autoReleaseShaderCompiler();
 	}
 	#endif
 	message = {msgText, face};
 	#ifndef CONFIG_INPUT_SYSTEM_COLLECTS_TEXT
-	textEntry.init(initialContent, face, projP);
-	textEntry.setAcceptingInput(1);
+	textEntry.setAcceptingInput(true);
 	#else
 	Input::startSysTextInput(
 		[this](const char *str)
 		{
-			Gfx::bind();
+			renderer().restoreBind();
 			if(!str)
 			{
 				logMsg("text collection canceled by external source");
@@ -163,32 +165,32 @@ void CollectTextInputView::place()
 	}
 	#endif
 	message.maxLineSize = projP.w * 0.95;
-	message.compile(projP);
+	message.compile(renderer(), projP);
 	IG::WindowRect textRect;
 	int xSize = rect.xSize() * 0.95;
 	int ySize = View::defaultFace.nominalHeight()* (Config::envIsAndroid ? 2. : 1.5);
 	#ifndef CONFIG_INPUT_SYSTEM_COLLECTS_TEXT
 	textRect.setPosRel({rect.xPos(C2DO), rect.yPos(C2DO)}, {xSize, ySize}, C2DO);
-	textEntry.place(textRect, projP);
+	textEntry.place(renderer(), textRect, projP);
 	#else
 	textRect.setPosRel(rect.pos(C2DO) - IG::WP{0, (int)rect.ySize()/4}, {xSize, ySize}, C2DO);
 	Input::placeSysTextInput(textRect);
 	#endif
 }
 
-void CollectTextInputView::inputEvent(Input::Event e)
+bool CollectTextInputView::inputEvent(Input::Event e)
 {
-	if(e.state == Input::PUSHED)
+	if(e.state() == Input::PUSHED)
 	{
-		if(e.isDefaultCancelButton() || (e.isPointer() && cancelBtn.overlaps({e.x, e.y})))
+		if(e.isDefaultCancelButton() || (e.isPointer() && cancelBtn.overlaps(e.pos())))
 		{
 			dismiss();
-			return;
+			return true;
 		}
 	}
 	#ifndef CONFIG_INPUT_SYSTEM_COLLECTS_TEXT
 	bool acceptingInput = textEntry.acceptingInput;
-	textEntry.inputEvent(e);
+	bool handled = textEntry.inputEvent(renderer(), e);
 	if(!textEntry.acceptingInput && acceptingInput)
 	{
 		logMsg("calling on-text delegate");
@@ -197,33 +199,36 @@ void CollectTextInputView::inputEvent(Input::Event e)
 			textEntry.setAcceptingInput(1);
 		}
 	}
+	return handled;
 	#endif
+	return false;
 }
 
 void CollectTextInputView::draw()
 {
 	using namespace Gfx;
+	auto &r = renderer();
 	#ifndef CONFIG_BASE_ANDROID
 	if(cancelSpr.image())
 	{
-		setColor(COLOR_WHITE);
-		setBlendMode(BLEND_MODE_ALPHA);
-		TextureSampler::bindDefaultNearestMipClampSampler();
+		r.setColor(COLOR_WHITE);
+		r.setBlendMode(BLEND_MODE_ALPHA);
+		TextureSampler::bindDefaultNearestMipClampSampler(r);
 		cancelSpr.useDefaultProgram(IMG_MODE_MODULATE, projP.makeTranslate(projP.unProjectRect(cancelBtn).pos(C2DO)));
-		cancelSpr.draw();
+		cancelSpr.draw(r);
 	}
 	#endif
 	#ifndef CONFIG_INPUT_SYSTEM_COLLECTS_TEXT
-	setColor(0.25);
-	noTexProgram.use(projP.makeTranslate());
-	GeomRect::draw(textEntry.b, projP);
-	setColor(COLOR_WHITE);
-	textEntry.draw();
-	texAlphaProgram.use();
-	message.draw(0, projP.unprojectY(textEntry.b.pos(C2DO).y) + message.nominalHeight, CB2DO, projP);
+	r.setColor(0.25);
+	r.noTexProgram.use(r, projP.makeTranslate());
+	GeomRect::draw(r, textEntry.b, projP);
+	r.setColor(COLOR_WHITE);
+	textEntry.draw(r);
+	r.texAlphaProgram.use(r);
+	message.draw(r, 0, projP.unprojectY(textEntry.b.pos(C2DO).y) + message.nominalHeight, CB2DO, projP);
 	#else
-	setColor(COLOR_WHITE);
-	texAlphaProgram.use(projP.makeTranslate());
-	message.draw(0, projP.unprojectY(Input::sysTextInputRect().pos(C2DO).y) + message.nominalHeight, CB2DO, projP);
+	r.setColor(COLOR_WHITE);
+	r.texAlphaProgram.use(r, projP.makeTranslate());
+	message.draw(r, 0, projP.unprojectY(Input::sysTextInputRect().pos(C2DO).y) + message.nominalHeight, CB2DO, projP);
 	#endif
 }

@@ -4,6 +4,8 @@
 #include <imagine/base/Window.hh>
 #include <android/input.h>
 #include <android/configuration.h>
+#include <vector>
+#include <memory>
 
 namespace Base
 {
@@ -25,7 +27,6 @@ extern JavaInstMethod<void(jint)> jSetWinFormat;
 extern JavaInstMethod<jint()> jWinFormat;
 extern JavaInstMethod<void(jint)> jSetRequestedOrientation;
 extern SurfaceRotation osRotation;
-extern bool aHasFocus;
 extern uint appState;
 extern AInputQueue *inputQueue;
 extern FrameTimer *frameTimer;
@@ -49,13 +50,11 @@ namespace Input
 {
 
 class AndroidInputDevice;
-extern Device *virtualDev;
-extern AndroidInputDevice genericKeyDev;
-static constexpr uint maxSysInputDevs = MAX_DEVS;
-extern StaticArrayList<AndroidInputDevice*, maxSysInputDevs> sysInputDev;
-extern bool handleVolumeKeys;
+extern const AndroidInputDevice *virtualDev;
+extern std::vector<std::unique_ptr<AndroidInputDevice>> sysInputDev;
 extern void (*processInput)(AInputQueue *inputQueue);
 
+void init(JNIEnv *env);
 void setEventsUseOSInputMethod(bool on);
 bool eventsUseOSInputMethod();
 void initInputConfig(AConfiguration* config);
@@ -68,6 +67,10 @@ void processInputWithHasEvents(AInputQueue *inputQueue);
 void onPauseMOGA(JNIEnv *env);
 void onResumeMOGA(JNIEnv *env, bool notify);
 bool hasGetAxisValue();
+void registerDeviceChangeListener();
+void unregisterDeviceChangeListener();
+bool addInputDevice(AndroidInputDevice dev, bool updateExisting, bool notify);
+bool removeInputDevice(int id, bool notify);
 
 }
 

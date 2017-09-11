@@ -21,6 +21,8 @@
 namespace Gfx
 {
 
+class Renderer;
+
 struct SurfaceTextureStorage: public DirectTextureStorage
 {
 	jobject surfaceTex{}, surface{};
@@ -28,12 +30,11 @@ struct SurfaceTextureStorage: public DirectTextureStorage
 	uint bpp = 0;
 	bool singleBuffered = false;
 
-	constexpr SurfaceTextureStorage() {}
-	~SurfaceTextureStorage() override;
-	CallResult init(GLuint tex);
-	CallResult setFormat(IG::PixmapDesc desc, GLuint tex) override;
-	Buffer lock(IG::WindowRect *dirtyRect) override;
-	void unlock(GLuint tex) override;
+	SurfaceTextureStorage(Renderer &r, GLuint tex, Error &err);
+	~SurfaceTextureStorage() final;
+	Error setFormat(Renderer &r, IG::PixmapDesc desc, GLuint tex) final;
+	Buffer lock(Renderer &r, IG::WindowRect *dirtyRect) final;
+	void unlock(Renderer &r, GLuint tex) final;
 	static bool isRendererBlacklisted(const char *rendererStr);
 };
 

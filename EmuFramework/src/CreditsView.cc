@@ -17,9 +17,10 @@
 #include <emuframework/CreditsView.hh>
 #include <emuframework/EmuApp.hh>
 #include <imagine/util/math/int.hh>
+#include "private.hh"
 
-CreditsView::CreditsView(const char *str, Base::Window &win):
-	View{appViewTitle(), win}, str(str)
+CreditsView::CreditsView(const char *str, ViewAttachParams attach):
+	View{appViewTitle(), attach}, str(str)
 {
 	text = {str, &View::defaultFace};
 	fade.set(0., 1., INTERPOLATOR_TYPE_LINEAR, 20);
@@ -39,26 +40,29 @@ CreditsView::CreditsView(const char *str, Base::Window &win):
 void CreditsView::draw()
 {
 	using namespace Gfx;
-	setColor(1., 1., 1., fade.now());
-	texAlphaProgram.use(projP.makeTranslate());
+	auto &r = renderer();
+	r.setColor(1., 1., 1., fade.now());
+	r.texAlphaProgram.use(r, projP.makeTranslate());
 	auto textRect = rect;
 	if(IG::isOdd(textRect.ySize()))
 		textRect.y2--;
-	text.draw(projP.unProjectRect(textRect).pos(C2DO), C2DO, projP);
+	text.draw(r, projP.unProjectRect(textRect).pos(C2DO), C2DO, projP);
 }
 
 void CreditsView::place()
 {
-	text.compile(projP);
+	text.compile(renderer(), projP);
 }
 
-void CreditsView::inputEvent(Input::Event e)
+bool CreditsView::inputEvent(Input::Event e)
 {
-	if((e.isPointer() && rect.overlaps({e.x, e.y}) && e.state == Input::RELEASED)
-			|| (!e.isPointer() && e.state == Input::PUSHED))
+	if((e.isPointer() && rect.overlaps(e.pos()) && e.released())
+			|| (!e.isPointer() && !e.isSystemFunction() && e.pushed()))
 	{
 		dismiss();
+		return true;
 	}
+	return false;
 }
 
 CreditsView::~CreditsView()

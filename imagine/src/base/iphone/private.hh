@@ -28,6 +28,13 @@ extern CGColorSpaceRef grayColorSpace, rgbColorSpace;
 
 }
 
+namespace Input
+{
+
+void init();
+
+}
+
 #ifdef __OBJC__
 @interface ImagineUIViewController : UIViewController
 

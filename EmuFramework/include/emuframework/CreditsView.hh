@@ -29,11 +29,11 @@ private:
 	IG::WindowRect rect{};
 
 public:
-	CreditsView(const char *str, Base::Window &win);
+	CreditsView(const char *str, ViewAttachParams attach);
 	~CreditsView();
-	IG::WindowRect &viewRect() override { return rect; }
-	void draw() override;
-	void place() override;
-	void inputEvent(Input::Event e) override;
-	void onAddedToController(Input::Event e) override {}
+	IG::WindowRect &viewRect() final { return rect; }
+	void draw() final;
+	void place() final;
+	bool inputEvent(Input::Event e) final;
+	void onAddedToController(Input::Event e) final {}
 };

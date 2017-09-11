@@ -14,12 +14,14 @@
 	along with EmuFramework.  If not, see <http://www.gnu.org/licenses/> */
 
 #include <emuframework/TouchConfigView.hh>
-#include <emuframework/EmuInput.hh>
 #include <emuframework/EmuApp.hh>
+#include <emuframework/EmuOptions.hh>
 #include <imagine/gui/AlertView.hh>
 #include <imagine/base/Timer.hh>
 #include <imagine/input/DragTracker.hh>
 #include <utility>
+#include "private.hh"
+#include "privateInput.hh"
 
 static constexpr bool CAN_TURN_OFF_MENU_BTN = !Config::envIsIOS;
 
@@ -141,14 +143,14 @@ class OnScreenInputPlaceView : public View
 	Input::DragTracker dragTracker{};
 
 public:
-	OnScreenInputPlaceView(Base::Window &win): View(win) {}
+	OnScreenInputPlaceView(ViewAttachParams attach): View(attach) {}
 	~OnScreenInputPlaceView();
-	IG::WindowRect &viewRect() override { return viewFrame; }
+	IG::WindowRect &viewRect() final { return viewFrame; }
 	void init();
-	void place() override;
-	void inputEvent(Input::Event e) override;
-	void draw() override;
-	void onAddedToController(Input::Event e) override {}
+	void place() final;
+	bool inputEvent(Input::Event e) final;
+	void draw() final;
+	void onAddedToController(Input::Event e) final {}
 };
 
 void OnScreenInputPlaceView::init()
@@ -193,16 +195,19 @@ void OnScreenInputPlaceView::place()
 	auto exitBtnPos = mainWin.viewport().bounds().pos(C2DO);
 	int exitBtnSize = win.widthSMMInPixels(10.);
 	exitBtnRect = IG::makeWindowRectRel(exitBtnPos - IG::WP{exitBtnSize/2, exitBtnSize/2}, {exitBtnSize, exitBtnSize});
-	text.compile(projP);
+	text.compile(renderer(), projP);
 }
 
-void OnScreenInputPlaceView::inputEvent(Input::Event e)
+bool OnScreenInputPlaceView::inputEvent(Input::Event e)
 {
 	if(!e.isPointer())
 	{
 		if(e.pushed())
+		{
 			dismiss();
-		return;
+			return true;
+		}
+		return false;
 	}
 	if(e.pushed() && !textFade.duration())
 	{
@@ -211,7 +216,7 @@ void OnScreenInputPlaceView::inputEvent(Input::Event e)
 		textFade.set(1., 0., INTERPOLATOR_TYPE_LINEAR, 20);
 		screen()->addOnFrame(animate);
 	}
-	auto &d = drag[e.devId];
+	auto &d = drag[e.deviceID()];
 	dragTracker.inputEvent(e,
 		[&](Input::DragTrackerState)
 		{
@@ -260,30 +265,32 @@ void OnScreenInputPlaceView::inputEvent(Input::Event e)
 				dismiss();
 			}
 		});
+	return true;
 }
 
 void OnScreenInputPlaceView::draw()
 {
 	using namespace Gfx;
-	projP.resetTransforms();
+	auto &r = renderer();
+	projP.resetTransforms(r);
 	vController.draw(true, false, true, .75);
-	setColor(.5, .5, .5);
-	noTexProgram.use(projP.makeTranslate());
+	r.setColor(.5, .5, .5);
+	r.noTexProgram.use(r, projP.makeTranslate());
 	Gfx::GC lineSize = projP.unprojectYSize(1);
-	GeomRect::draw(Gfx::GCRect{-projP.wHalf(), -lineSize/(Gfx::GC)2.,
+	GeomRect::draw(r, Gfx::GCRect{-projP.wHalf(), -lineSize/(Gfx::GC)2.,
 		projP.wHalf(), lineSize/(Gfx::GC)2.});
 	lineSize = projP.unprojectYSize(1);
-	GeomRect::draw(Gfx::GCRect{-lineSize/(Gfx::GC)2., -projP.hHalf(),
+	GeomRect::draw(r, Gfx::GCRect{-lineSize/(Gfx::GC)2., -projP.hHalf(),
 		lineSize/(Gfx::GC)2., projP.hHalf()});
 
 	if(textFade.now() != 0.)
 	{
-		setColor(0., 0., 0., textFade.now()/2.);
-		GeomRect::draw(Gfx::makeGCRectRel({-text.xSize/(Gfx::GC)2. - text.spaceSize, -text.ySize/(Gfx::GC)2. - text.spaceSize},
+		r.setColor(0., 0., 0., textFade.now()/2.);
+		GeomRect::draw(r, Gfx::makeGCRectRel({-text.xSize/(Gfx::GC)2. - text.spaceSize, -text.ySize/(Gfx::GC)2. - text.spaceSize},
 			{text.xSize + text.spaceSize*(Gfx::GC)2., text.ySize + text.spaceSize*(Gfx::GC)2.}));
-		setColor(1., 1., 1., textFade.now());
-		texAlphaProgram.use();
-		text.draw(projP.unProjectRect(viewFrame).pos(C2DO), C2DO, projP);
+		r.setColor(1., 1., 1., textFade.now());
+		r.texAlphaProgram.use(r);
+		text.draw(r, projP.unProjectRect(viewFrame).pos(C2DO), C2DO, projP);
 	}
 }
 
@@ -326,13 +333,13 @@ static void setSize(uint val)
 static void setDeadzone(uint val)
 {
 	optionTouchDpadDeadzone = val;
-	vController.gp.dp.setDeadzone(vController.xMMSizeToPixel(Base::mainWindow(), int(optionTouchDpadDeadzone) / 100.));
+	vController.gp.dp.setDeadzone(emuVideo.renderer(), vController.xMMSizeToPixel(Base::mainWindow(), int(optionTouchDpadDeadzone) / 100.));
 }
 
 static void setDiagonalSensitivity(uint val)
 {
 	optionTouchDpadDiagonalSensitivity = val;
-	vController.gp.dp.setDiagonalSensitivity(optionTouchDpadDiagonalSensitivity / 1000.);
+	vController.gp.dp.setDiagonalSensitivity(emuVideo.renderer(), optionTouchDpadDiagonalSensitivity / 1000.);
 }
 
 static void setButtonSpace(uint val)
@@ -387,7 +394,8 @@ static void setAlpha(uint val)
 void TouchConfigView::draw()
 {
 	using namespace Gfx;
-	projP.resetTransforms();
+	auto &r = renderer();
+	projP.resetTransforms(r);
 	vController.draw(true, false, true, .75);
 	TableView::draw();
 }
@@ -442,8 +450,8 @@ void TouchConfigView::refreshTouchConfigMenu()
 	#endif
 }
 
-TouchConfigView::TouchConfigView(Base::Window &win, const char *faceBtnName, const char *centerBtnName):
-	TableView{"On-screen Input Setup", win, item},
+TouchConfigView::TouchConfigView(ViewAttachParams attach, const char *faceBtnName, const char *centerBtnName):
+	TableView{"On-screen Input Setup", attach, item},
 	#ifdef CONFIG_VCONTROLS_GAMEPAD
 	touchCtrlItem
 	{
@@ -727,7 +735,7 @@ TouchConfigView::TouchConfigView(Base::Window &win, const char *faceBtnName, con
 		"Set Button Positions",
 		[this](TextMenuItem &, View &, Input::Event e)
 		{
-			auto &onScreenInputPlace = *new OnScreenInputPlaceView{window()};
+			auto &onScreenInputPlace = *new OnScreenInputPlaceView{attachParams()};
 			onScreenInputPlace.init();
 			modalViewController.pushAndShow(onScreenInputPlace, e);
 		}
@@ -768,7 +776,7 @@ TouchConfigView::TouchConfigView(Base::Window &win, const char *faceBtnName, con
 		"Reset Position & Spacing Options",
 		[this](TextMenuItem &, View &, Input::Event e)
 		{
-			auto &ynAlertView = *new YesNoAlertView{window(), "Reset buttons to default positions & spacing?"};
+			auto &ynAlertView = *new YesNoAlertView{attachParams(), "Reset buttons to default positions & spacing?"};
 			ynAlertView.setOnYes(
 				[this](TextMenuItem &, View &view, Input::Event e)
 				{
@@ -785,7 +793,7 @@ TouchConfigView::TouchConfigView(Base::Window &win, const char *faceBtnName, con
 		"Reset All Options",
 		[this](TextMenuItem &, View &, Input::Event e)
 		{
-			auto &ynAlertView = *new YesNoAlertView{window(), "Reset all on-screen control options to default?"};
+			auto &ynAlertView = *new YesNoAlertView{attachParams(), "Reset all on-screen control options to default?"};
 			ynAlertView.setOnYes(
 				[this](TextMenuItem &, View &view, Input::Event e)
 				{
@@ -802,7 +810,7 @@ TouchConfigView::TouchConfigView(Base::Window &win, const char *faceBtnName, con
 		"Emulated System Options",
 		[this](TextMenuItem &item, View &, Input::Event e)
 		{
-			auto &optView = *EmuSystem::makeView(window(), EmuSystem::ViewID::INPUT_OPTIONS);
+			auto &optView = *EmuSystem::makeView(attachParams(), EmuSystem::ViewID::INPUT_OPTIONS);
 			pushAndShow(optView, e);
 		}
 	},

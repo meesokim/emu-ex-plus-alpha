@@ -47,7 +47,8 @@ public final class BaseActivity extends NativeActivity implements AudioManager.O
 		int left, int top, int right, int bottom, int windowWidth, int windowHeight);
 	private static final Method setSystemUiVisibility =
 		android.os.Build.VERSION.SDK_INT >= 11 ? Util.getMethod(View.class, "setSystemUiVisibility", new Class[] { int.class }) : null;
-	private static final int commonUILayoutFlags = View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN | View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION;
+	private static final int commonUILayoutFlags = View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
+		| View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION;
 	
 	private final class IdleHelper implements MessageQueue.IdleHandler
 	{
@@ -392,10 +393,12 @@ public final class BaseActivity extends NativeActivity implements AudioManager.O
 		View nativeActivityView = findViewById(android.R.id.content);
 		nativeActivityView.getViewTreeObserver().removeGlobalOnLayoutListener(this);
 		View contentView;
-		if(android.os.Build.VERSION.SDK_INT >= 16)
-			contentView = new ContentView(this);
+		if(android.os.Build.VERSION.SDK_INT >= 24)
+			contentView = new ContentViewV24(this);
+		else if(android.os.Build.VERSION.SDK_INT >= 16)
+			contentView = new ContentViewV16(this);
 		else
-			contentView = new ContentLegacyView(this);
+			contentView = new ContentViewV9(this);
 		setContentView(contentView);
 		contentView.requestFocus();
 	}
@@ -449,6 +452,11 @@ public final class BaseActivity extends NativeActivity implements AudioManager.O
 	IdleHelper newIdleHelper()
 	{
 		return new IdleHelper();
+	}
+	
+	InputDeviceHelper inputDeviceHelper()
+	{
+		return new InputDeviceHelper();
 	}
 	
 	InputDeviceListenerHelper inputDeviceListenerHelper()
@@ -544,5 +552,18 @@ public final class BaseActivity extends NativeActivity implements AudioManager.O
 			return true;
 		ActivityCompat.requestPermissions(this, new String[]{permission}, 0);
 		return false;
+	}
+	
+	void makeErrorPopup(String text)
+	{
+		TextView view = new TextView(this);
+		view.setText(text);
+		final PopupWindow win = new PopupWindow(view, ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+		final View contentView = findViewById(android.R.id.content);
+		contentView.post(new Runnable() {
+			public void run() {
+				win.showAtLocation(contentView, Gravity.CENTER, 0, 0);
+			}
+		});
 	}
 }

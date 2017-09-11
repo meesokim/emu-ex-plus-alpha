@@ -18,7 +18,7 @@
 #include <imagine/fs/ArchiveFS.hh>
 #include <imagine/io/FileIO.hh>
 #include <imagine/logger/logger.h>
-#include <imagine/util/assume.h>
+#include <imagine/util/utility.h>
 #include <imagine/util/string.h>
 #include <archive.h>
 #include <archive_entry.h>
@@ -57,7 +57,7 @@ void ArchiveIterator::init(const char *path, std::error_code &ec)
 		ec = fileEC;
 		return;
 	}
-	init(GenericIO{std::move(file)}, ec);
+	init(file.makeGeneric(), ec);
 }
 
 void ArchiveIterator::init(GenericIO io, std::error_code &result)

@@ -12,10 +12,10 @@ static const uint MAX = MAX_CHEATS;
 class EmuCheatsView : public BaseCheatsView
 {
 private:
-	void loadCheatItems() override;
+	void loadCheatItems() final;
 
 public:
-	EmuCheatsView(Base::Window &win);
+	EmuCheatsView(ViewAttachParams attach);
 };
 
 class EmuEditCheatListView : public BaseEditCheatListView
@@ -23,10 +23,10 @@ class EmuEditCheatListView : public BaseEditCheatListView
 private:
 	TextMenuItem addCode{};
 
-	void loadCheatItems() override;
+	void loadCheatItems() final;
 
 public:
-	EmuEditCheatListView(Base::Window &win);
+	EmuEditCheatListView(ViewAttachParams attach);
 };
 
 class EmuEditCheatView : public BaseEditCheatView
@@ -36,8 +36,8 @@ private:
 	uint idx = 0;
 	char addrStr[7]{}, valueStr[3]{}, savedStr[3]{};
 
-	void renamed(const char *str) override;
+	void renamed(const char *str) final;
 
 public:
-	EmuEditCheatView(Base::Window &win, uint cheatIdx);
+	EmuEditCheatView(ViewAttachParams attach, uint cheatIdx);
 };

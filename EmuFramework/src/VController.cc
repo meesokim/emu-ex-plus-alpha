@@ -16,21 +16,22 @@
 #define LOGTAG "VController"
 #include <emuframework/VController.hh>
 #include <emuframework/EmuApp.hh>
+#include <emuframework/EmuOptions.hh>
 #include <imagine/util/algorithm.h>
 #include <imagine/util/math/int.hh>
+#include "private.hh"
 
 void VControllerDPad::init() {}
 
-void VControllerDPad::setImg(Gfx::PixmapTexture &dpadR, Gfx::GTexC texHeight)
+void VControllerDPad::setImg(Gfx::Renderer &r, Gfx::PixmapTexture &dpadR, Gfx::GTexC texHeight)
 {
 	using namespace Gfx;
 	spr.init({-.5, -.5, .5, .5,});
 	spr.setImg(&dpadR, {0., 0., 1., 64._gtexc/texHeight});
-	if(spr.compileDefaultProgram(Gfx::IMG_MODE_MODULATE))
-		Gfx::autoReleaseShaderCompiler();
+	spr.compileDefaultProgramOneShot(Gfx::IMG_MODE_MODULATE);
 }
 
-void VControllerDPad::updateBoundingAreaGfx()
+void VControllerDPad::updateBoundingAreaGfx(Gfx::Renderer &r)
 {
 	if(visualizeBounds && padArea.xSize())
 	{
@@ -38,35 +39,35 @@ void VControllerDPad::updateBoundingAreaGfx()
 		iterateTimes(mapPix.h(), y)
 			iterateTimes(mapPix.w(), x)
 			{
-				int input = getInput(padArea.xPos(LT2DO) + x, padArea.yPos(LT2DO) + y);
+				int input = getInput({padArea.xPos(LT2DO) + (int)x, padArea.yPos(LT2DO) + (int)y});
 				//logMsg("got input %d", input);
 				*((uint16*)mapPix.pixel({(int)x, (int)y})) = input == -1 ? IG::PIXEL_DESC_RGB565.build(1., 0., 0., 1.)
 										: IG::isOdd(input) ? IG::PIXEL_DESC_RGB565.build(1., 1., 1., 1.)
 										: IG::PIXEL_DESC_RGB565.build(0., 1., 0., 1.);
 			}
-		mapImg.init({mapPix});
+		mapImg.init(r, {mapPix});
 		mapImg.write(0, mapPix, {});
 		mapSpr.init({}, mapImg);
 		mapSpr.setPos(padArea, mainWin.projectionPlane);
 	}
 }
 
-void VControllerDPad::setDeadzone(int newDeadzone)
+void VControllerDPad::setDeadzone(Gfx::Renderer &r, int newDeadzone)
 {
 	if(deadzone != newDeadzone)
 	{
 		deadzone = newDeadzone;
-		updateBoundingAreaGfx();
+		updateBoundingAreaGfx(r);
 	}
 }
 
-void VControllerDPad::setDiagonalSensitivity(float newDiagonalSensitivity)
+void VControllerDPad::setDiagonalSensitivity(Gfx::Renderer &r, float newDiagonalSensitivity)
 {
 	if(diagonalSensitivity != newDiagonalSensitivity)
 	{
 		logMsg("set diagonal sensitivity: %f", (double)newDiagonalSensitivity);
 		diagonalSensitivity = newDiagonalSensitivity;
-		updateBoundingAreaGfx();
+		updateBoundingAreaGfx(r);
 	}
 }
 
@@ -75,7 +76,7 @@ IG::WindowRect VControllerDPad::bounds() const
 	return padBaseArea;
 }
 
-void VControllerDPad::setSize(uint sizeInPixels)
+void VControllerDPad::setSize(Gfx::Renderer &r, uint sizeInPixels)
 {
 	//logMsg("set dpad pixel size: %d", sizeInPixels);
 	btnSizePixels = sizeInPixels;
@@ -86,7 +87,7 @@ void VControllerDPad::setSize(uint sizeInPixels)
 	if(visualizeBounds)
 	{
 		if(changedSize)
-			updateBoundingAreaGfx();
+			updateBoundingAreaGfx(r);
 	}
 }
 
@@ -105,7 +106,7 @@ void VControllerDPad::setPos(IG::Point2D<int> pos)
 	}
 }
 
-void VControllerDPad::setBoundingAreaVisible(bool on)
+void VControllerDPad::setBoundingAreaVisible(Gfx::Renderer &r, bool on)
 {
 	if(visualizeBounds == on)
 		return;
@@ -121,28 +122,28 @@ void VControllerDPad::setBoundingAreaVisible(bool on)
 	}
 	else
 	{
-		updateBoundingAreaGfx();
+		updateBoundingAreaGfx(r);
 	}
 }
 
-void VControllerDPad::draw() const
+void VControllerDPad::draw(Gfx::Renderer &r) const
 {
-	Gfx::TextureSampler::bindDefaultNearestMipClampSampler();
+	Gfx::TextureSampler::bindDefaultNearestMipClampSampler(r);
 	spr.useDefaultProgram(Gfx::IMG_MODE_MODULATE);
-	spr.draw();
+	spr.draw(r);
 
 	if(visualizeBounds)
 	{
 		mapSpr.useDefaultProgram(Gfx::IMG_MODE_MODULATE);
-		mapSpr.draw();
+		mapSpr.draw(r);
 	}
 }
 
-int VControllerDPad::getInput(int cx, int cy) const
+int VControllerDPad::getInput(IG::WP c) const
 {
-	if(padArea.overlaps({cx, cy}))
+	if(padArea.overlaps(c))
 	{
-		int x = cx - padArea.xCenter(), y = cy - padArea.yCenter();
+		int x = c.x - padArea.xCenter(), y = c.y - padArea.yCenter();
 		int xDeadzone = deadzone, yDeadzone = deadzone;
 		if(std::abs(x) > deadzone)
 			yDeadzone += (std::abs(x) - deadzone)/diagonalSensitivity;
@@ -174,21 +175,20 @@ void VControllerKeyboard::init()
 	mode = 0;
 }
 
-void VControllerKeyboard::updateImg()
+void VControllerKeyboard::updateImg(Gfx::Renderer &r)
 {
 	if(mode)
 		spr.setUVBounds({0., .5, texXEnd, 1.});
 	else
 		spr.setUVBounds({0., 0., texXEnd, .5});
-	if(spr.compileDefaultProgram(Gfx::IMG_MODE_MODULATE))
-		Gfx::autoReleaseShaderCompiler();
+	spr.compileDefaultProgramOneShot(Gfx::IMG_MODE_MODULATE);
 }
 
-void VControllerKeyboard::setImg(Gfx::PixmapTexture *img)
+void VControllerKeyboard::setImg(Gfx::Renderer &r, Gfx::PixmapTexture *img)
 {
 	spr.init({-.5, -.5, .5, .5}, *img);
 	texXEnd = img->uvBounds().x2;
-	updateImg();
+	updateImg(r);
 }
 
 void VControllerKeyboard::place(Gfx::GC btnSize, Gfx::GC yOffset)
@@ -209,21 +209,21 @@ void VControllerKeyboard::place(Gfx::GC btnSize, Gfx::GC yOffset)
 	logMsg("key size %dx%d", keyXSize, keyYSize);
 }
 
-void VControllerKeyboard::draw() const
+void VControllerKeyboard::draw(Gfx::Renderer &r) const
 {
 	if(spr.image()->levels() > 1)
-		Gfx::TextureSampler::bindDefaultNearestMipClampSampler();
+		Gfx::TextureSampler::bindDefaultNearestMipClampSampler(r);
 	else
-		Gfx::TextureSampler::bindDefaultNoMipClampSampler();
+		Gfx::TextureSampler::bindDefaultNoMipClampSampler(r);
 	spr.useDefaultProgram(Gfx::IMG_MODE_MODULATE);
-	spr.draw();
+	spr.draw(r);
 }
 
-int VControllerKeyboard::getInput(int cx, int cy) const
+int VControllerKeyboard::getInput(IG::WP c) const
 {
-	if(bound.overlaps({cx, cy}))
+	if(bound.overlaps(c))
 	{
-		int relX = cx - bound.x, relY = cy - bound.y;
+		int relX = c.x - bound.x, relY = c.y - bound.y;
 		uint row = relY/keyYSize;
 		uint col;
 		if((mode == 0 && row == 1) || row == 2)
@@ -257,10 +257,10 @@ void VControllerGamepad::init(float alpha)
 	dp.init();
 }
 
-void VControllerGamepad::setBoundingAreaVisible(bool on)
+void VControllerGamepad::setBoundingAreaVisible(Gfx::Renderer &r, bool on)
 {
 	showBoundingArea = on;
-	dp.setBoundingAreaVisible(on);
+	dp.setBoundingAreaVisible(r, on);
 }
 
 bool VControllerGamepad::boundingAreaVisible() const
@@ -268,13 +268,12 @@ bool VControllerGamepad::boundingAreaVisible() const
 	return showBoundingArea;
 }
 
-void VControllerGamepad::setImg(Gfx::PixmapTexture &pics)
+void VControllerGamepad::setImg(Gfx::Renderer &r, Gfx::PixmapTexture &pics)
 {
 	using namespace Gfx;
-	if(pics.compileDefaultProgram(Gfx::IMG_MODE_MODULATE))
-		Gfx::autoReleaseShaderCompiler();
+	pics.compileDefaultProgramOneShot(Gfx::IMG_MODE_MODULATE);
 	Gfx::GTexC h = EmuSystem::inputFaceBtns == 2 ? 128. : 256.;
-	dp.setImg(pics, h);
+	dp.setImg(r, pics, h);
 	iterateTimes(EmuSystem::inputCenterBtns, i)
 	{
 		centerBtnSpr[i].init({});
@@ -488,11 +487,11 @@ void VControllerGamepad::setFaceBtnPos(IG::Point2D<int> pos)
 	}
 }
 
-void VControllerGamepad::setBaseBtnSize(uint sizeInPixels)
+void VControllerGamepad::setBaseBtnSize(Gfx::Renderer &r, uint sizeInPixels)
 {
 	btnSizePixels = sizeInPixels;
 	btnSize = mainWin.projectionPlane.unprojectXSize(sizeInPixels);
-	dp.setSize(IG::makeEvenRoundedUp(int(sizeInPixels*(double)2.5)));
+	dp.setSize(r, IG::makeEvenRoundedUp(int(sizeInPixels*(double)2.5)));
 
 	// face buttons
 	uint btns = (EmuSystem::inputHasTriggerBtns && !triggersInline) ? EmuSystem::inputFaceBtns-2 : activeFaceBtns;
@@ -512,13 +511,13 @@ void VControllerGamepad::setBaseBtnSize(uint sizeInPixels)
 	rTriggerBound = IG::makeWindowRectRel({0, 0}, {btnSizePixels, btnSizePixels});
 }
 
-std::array<int, 2> VControllerGamepad::getCenterBtnInput(int x, int y) const
+std::array<int, 2> VControllerGamepad::getCenterBtnInput(IG::WP pos) const
 {
 	std::array<int, 2> btnOut{-1, -1};
 	uint count = 0;
 	iterateTimes(EmuSystem::inputCenterBtns, i)
 	{
-		if(centerBtnBound[i].overlaps({x, y}))
+		if(centerBtnBound[i].overlaps(pos))
 		{
 			//logMsg("overlaps %d", (int)i);
 			btnOut[count] = i;
@@ -530,7 +529,7 @@ std::array<int, 2> VControllerGamepad::getCenterBtnInput(int x, int y) const
 	return btnOut;
 }
 
-std::array<int, 2> VControllerGamepad::getBtnInput(int x, int y) const
+std::array<int, 2> VControllerGamepad::getBtnInput(IG::WP pos) const
 {
 	std::array<int, 2> btnOut{-1, -1};
 	uint count = 0;
@@ -539,7 +538,7 @@ std::array<int, 2> VControllerGamepad::getBtnInput(int x, int y) const
 	{
 		iterateTimes(doSeparateTriggers ? EmuSystem::inputFaceBtns-2 : activeFaceBtns, i)
 		{
-			if(faceBtnBound[i].overlaps({x, y}))
+			if(faceBtnBound[i].overlaps(pos))
 			{
 				//logMsg("overlaps %d", (int)i);
 				btnOut[count] = i;
@@ -554,7 +553,7 @@ std::array<int, 2> VControllerGamepad::getBtnInput(int x, int y) const
 	{
 		if(lTriggerState)
 		{
-			if(faceBtnBound[lTriggerIdx()].overlaps({x, y}))
+			if(faceBtnBound[lTriggerIdx()].overlaps(pos))
 			{
 				btnOut[count] = lTriggerIdx();
 				count++;
@@ -564,7 +563,7 @@ std::array<int, 2> VControllerGamepad::getBtnInput(int x, int y) const
 		}
 		if(rTriggerState)
 		{
-			if(faceBtnBound[rTriggerIdx()].overlaps({x, y}))
+			if(faceBtnBound[rTriggerIdx()].overlaps(pos))
 			{
 				btnOut[count] = rTriggerIdx();
 				count++;
@@ -577,76 +576,76 @@ std::array<int, 2> VControllerGamepad::getBtnInput(int x, int y) const
 	return btnOut;
 }
 
-void VControllerGamepad::draw(bool showHidden) const
+void VControllerGamepad::draw(Gfx::Renderer &r, bool showHidden) const
 {
 	using namespace Gfx;
 	if(dp.state == 1 || (showHidden && dp.state))
 	{
-		dp.draw();
+		dp.draw(r);
 	}
 
 	if(faceBtnsState == 1 || (showHidden && faceBtnsState))
 	{
-		TextureSampler::bindDefaultNearestMipClampSampler();
+		TextureSampler::bindDefaultNearestMipClampSampler(r);
 		if(showBoundingArea)
 		{
-			noTexProgram.use();
+			r.noTexProgram.use(r);
 			iterateTimes((EmuSystem::inputHasTriggerBtns && !triggersInline) ? EmuSystem::inputFaceBtns-2 : activeFaceBtns, i)
 			{
-				GeomRect::draw(faceBtnBound[i], mainWin.projectionPlane);
+				GeomRect::draw(r, faceBtnBound[i], mainWin.projectionPlane);
 			}
 		}
 		dp.spr.useDefaultProgram(Gfx::IMG_MODE_MODULATE);
 		//GeomRect::draw(faceBtnsBound);
 		iterateTimes((EmuSystem::inputHasTriggerBtns && !triggersInline) ? EmuSystem::inputFaceBtns-2 : activeFaceBtns, i)
 		{
-			circleBtnSpr[i].draw();
+			circleBtnSpr[i].draw(r);
 		}
 	}
 
 	if(EmuSystem::inputHasTriggerBtns && !triggersInline)
 	{
-		TextureSampler::bindDefaultNearestMipClampSampler();
+		TextureSampler::bindDefaultNearestMipClampSampler(r);
 		if(showBoundingArea)
 		{
 			if(lTriggerState == 1 || (showHidden && lTriggerState))
 			{
-				noTexProgram.use();
-				GeomRect::draw(faceBtnBound[lTriggerIdx()], mainWin.projectionPlane);
+				r.noTexProgram.use(r);
+				GeomRect::draw(r, faceBtnBound[lTriggerIdx()], mainWin.projectionPlane);
 			}
 			if(rTriggerState == 1 || (showHidden && rTriggerState))
 			{
-				noTexProgram.use();
-				GeomRect::draw(faceBtnBound[rTriggerIdx()], mainWin.projectionPlane);
+				r.noTexProgram.use(r);
+				GeomRect::draw(r, faceBtnBound[rTriggerIdx()], mainWin.projectionPlane);
 			}
 		}
 		if(lTriggerState == 1 || (showHidden && lTriggerState))
 		{
 			dp.spr.useDefaultProgram(Gfx::IMG_MODE_MODULATE);
-			circleBtnSpr[lTriggerIdx()].draw();
+			circleBtnSpr[lTriggerIdx()].draw(r);
 		}
 		if(rTriggerState == 1 || (showHidden && rTriggerState))
 		{
 			dp.spr.useDefaultProgram(Gfx::IMG_MODE_MODULATE);
-			circleBtnSpr[rTriggerIdx()].draw();
+			circleBtnSpr[rTriggerIdx()].draw(r);
 		}
 	}
 
 	if(centerBtnsState == 1 || (showHidden && centerBtnsState))
 	{
-		TextureSampler::bindDefaultNearestMipClampSampler();
+		TextureSampler::bindDefaultNearestMipClampSampler(r);
 		if(showBoundingArea)
 		{
-			noTexProgram.use();
+			r.noTexProgram.use(r);
 			iterateTimes(EmuSystem::inputCenterBtns, i)
 			{
-				GeomRect::draw(centerBtnBound[i], mainWin.projectionPlane);
+				GeomRect::draw(r, centerBtnBound[i], mainWin.projectionPlane);
 			}
 		}
 		dp.spr.useDefaultProgram(Gfx::IMG_MODE_MODULATE);
 		iterateTimes(EmuSystem::inputCenterBtns, i)
 		{
-			centerBtnSpr[i].draw();
+			centerBtnSpr[i].draw(r);
 		}
 	}
 }
@@ -679,14 +678,14 @@ bool VController::hasTriggers() const
 void VController::setImg(Gfx::PixmapTexture &pics)
 {
 	#ifdef CONFIG_VCONTROLS_GAMEPAD
-	gp.setImg(pics);
+	gp.setImg(renderer, pics);
 	#endif
 }
 
 void VController::setBoundingAreaVisible(bool on)
 {
 	#ifdef CONFIG_VCONTROLS_GAMEPAD
-	gp.setBoundingAreaVisible(on);
+	gp.setBoundingAreaVisible(renderer, on);
 	#endif
 }
 
@@ -718,7 +717,7 @@ void VController::setBaseBtnSize(uint gamepadBtnSizeInPixels, uint uiBtnSizeInPi
 	if(EmuSystem::inputHasKeyboard)
 		kb.place(projP.unprojectYSize(gamepadBtnSizeInPixels), projP.unprojectYSize(gamepadBtnSizeInPixels * .75));
 	#ifdef CONFIG_VCONTROLS_GAMEPAD
-	gp.setBaseBtnSize(gamepadBtnSizeInPixels);
+	gp.setBaseBtnSize(renderer, gamepadBtnSizeInPixels);
 	#endif
 	int size = uiBtnSizeInPixels;
 	if(menuBound.xSize() != size)
@@ -798,7 +797,7 @@ std::array<int, 2> VController::findElementUnderPos(Input::Event e)
 {
 	if(isInKeyboardMode())
 	{
-		int kbChar = kb.getInput(e.x, e.y);
+		int kbChar = kb.getInput(e.pos());
 		if(kbChar == -1)
 			return {-1, -1};
 		if(kbChar == 30 && e.pushed())
@@ -810,7 +809,7 @@ std::array<int, 2> VController::findElementUnderPos(Input::Event e)
 		{
 			logMsg("switch kb mode");
 			kb.mode ^= true;
-			kb.updateImg();
+			kb.updateImg(renderer);
 			resetInput();
 			updateKeyboardMapping();
 		}
@@ -822,7 +821,7 @@ std::array<int, 2> VController::findElementUnderPos(Input::Event e)
 	#ifdef CONFIG_VCONTROLS_GAMEPAD
 	if(gp.centerBtnsState != 0)
 	{
-		auto elem = gp.getCenterBtnInput(e.x, e.y);
+		auto elem = gp.getCenterBtnInput(e.pos());
 		if(elem[0] != -1)
 		{
 			return {C_ELEM + elem[0], elem[1] != -1 ? C_ELEM + elem[1] : -1};
@@ -830,7 +829,7 @@ std::array<int, 2> VController::findElementUnderPos(Input::Event e)
 	}
 
 	{
-		auto elem = gp.getBtnInput(e.x, e.y);
+		auto elem = gp.getBtnInput(e.pos());
 		if(elem[0] != -1)
 		{
 			return {F_ELEM + elem[0], elem[1] != -1 ? F_ELEM + elem[1] : -1};
@@ -839,7 +838,7 @@ std::array<int, 2> VController::findElementUnderPos(Input::Event e)
 
 	if(gp.dp.state != 0)
 	{
-		int elem = gp.dp.getInput(e.x, e.y);
+		int elem = gp.dp.getInput(e.pos());
 		if(elem != -1)
 		{
 			return {D_ELEM + elem, -1};
@@ -853,7 +852,7 @@ void VController::applyInput(Input::Event e)
 {
 	using namespace IG;
 	assert(e.isPointer());
-	auto &currElem = ptrElem[e.devId];
+	auto &currElem = ptrElem[e.deviceID()];
 	std::array<int, 2> elem{-1, -1};
 	if(e.isPointerPushed(Input::Pointer::LBUTTON)) // make sure the cursor isn't hovering
 		elem = findElementUnderPos(e);
@@ -897,13 +896,14 @@ void VController::draw(bool emuSystemControls, bool activeFF, bool showHidden, f
 	using namespace Gfx;
 	if(unlikely(alpha == 0.))
 		return;
-	setBlendMode(BLEND_MODE_ALPHA);
-	setColor(1., 1., 1., alpha);
+	auto &r = renderer;
+	r.setBlendMode(BLEND_MODE_ALPHA);
+	r.setColor(1., 1., 1., alpha);
 	#ifdef CONFIG_VCONTROLS_GAMEPAD
 	if(isInKeyboardMode())
-		kb.draw();
+		kb.draw(r);
 	else if(emuSystemControls)
-		gp.draw(showHidden);
+		gp.draw(r, showHidden);
 	#else
 	if(isInKeyboardMode())
 		kb.draw();
@@ -912,17 +912,17 @@ void VController::draw(bool emuSystemControls, bool activeFF, bool showHidden, f
 	//GeomRect::draw(ffBound);
 	if(menuBtnState == 1 || (showHidden && menuBtnState))
 	{
-		TextureSampler::bindDefaultNearestMipClampSampler();
+		TextureSampler::bindDefaultNearestMipClampSampler(r);
 		menuBtnSpr.useDefaultProgram(IMG_MODE_MODULATE);
-		menuBtnSpr.draw();
+		menuBtnSpr.draw(r);
 	}
 	if(ffBtnState == 1 || (showHidden && ffBtnState))
 	{
-		TextureSampler::bindDefaultNearestMipClampSampler();
+		TextureSampler::bindDefaultNearestMipClampSampler(r);
 		ffBtnSpr.useDefaultProgram(IMG_MODE_MODULATE);
 		if(activeFF)
-			setColor(1., 0., 0., alpha);
-		ffBtnSpr.draw();
+			r.setColor(1., 0., 0., alpha);
+		ffBtnSpr.draw(r);
 	}
 }
 
@@ -947,7 +947,7 @@ IG::WindowRect VController::bounds(int elemIdx) const
 		case 4: return ffBound;
 		case 5: return gp.lTriggerBounds();
 		case 6: return gp.rTriggerBounds();
-		default: bug_branch("%d", elemIdx); return {0,0,0,0};
+		default: bug_unreachable("elemIdx == %d", elemIdx); return {0,0,0,0};
 	}
 	#else
 	switch(elemIdx)
@@ -957,7 +957,7 @@ IG::WindowRect VController::bounds(int elemIdx) const
 		case 2: return {0,0,0,0};
 		case 3: return menuBound;
 		case 4: return ffBound;
-		default: bug_branch("%d", elemIdx); return {0,0,0,0};
+		default: bug_unreachable("elemIdx == %d", elemIdx); return {0,0,0,0};
 	}
 	#endif
 }
@@ -974,7 +974,7 @@ void VController::setPos(int elemIdx, IG::Point2D<int> pos)
 		bcase 4: setFFBtnPos(pos);
 		bcase 5: gp.setLTriggerPos(pos);
 		bcase 6: gp.setRTriggerPos(pos);
-		bdefault: bug_branch("%d", elemIdx);
+		bdefault: bug_unreachable("elemIdx == %d", elemIdx);
 	}
 	#else
 	switch(elemIdx)
@@ -984,7 +984,7 @@ void VController::setPos(int elemIdx, IG::Point2D<int> pos)
 		bcase 2:
 		bcase 3: setMenuBtnPos(pos);
 		bcase 4: setFFBtnPos(pos);
-		bdefault: bug_branch("%d", elemIdx);
+		bdefault: bug_unreachable("elemIdx == %d", elemIdx);
 	}
 	#endif
 }
@@ -1001,7 +1001,7 @@ void VController::setState(int elemIdx, uint state)
 		bcase 4: ffBtnState = state;
 		bcase 5: gp.lTriggerState = state;
 		bcase 6: gp.rTriggerState = state;
-		bdefault: bug_branch("%d", elemIdx);
+		bdefault: bug_unreachable("elemIdx == %d", elemIdx);
 	}
 	#else
 	switch(elemIdx)
@@ -1011,7 +1011,7 @@ void VController::setState(int elemIdx, uint state)
 		bcase 2:
 		bcase 3: menuBtnState = state;
 		bcase 4: ffBtnState = state;
-		bdefault: bug_branch("%d", elemIdx);
+		bdefault: bug_unreachable("elemIdx == %d", elemIdx);
 	}
 	#endif
 }
@@ -1028,7 +1028,7 @@ uint VController::state(int elemIdx) const
 		case 4: return ffBtnState;
 		case 5: return gp.lTriggerState;
 		case 6: return gp.rTriggerState;
-		default: bug_branch("%d", elemIdx); return 0;
+		default: bug_unreachable("elemIdx == %d", elemIdx); return 0;
 	}
 	#else
 	switch(elemIdx)
@@ -1038,7 +1038,7 @@ uint VController::state(int elemIdx) const
 		case 2: return 0;
 		case 3: return menuBtnState;
 		case 4: return ffBtnState;
-		default: bug_branch("%d", elemIdx); return 0;
+		default: bug_unreachable("elemIdx == %d", elemIdx); return 0;
 	}
 	#endif
 }

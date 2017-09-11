@@ -15,9 +15,11 @@
 
 #include <emuframework/OptionView.hh>
 #include <emuframework/EmuApp.hh>
+#include <emuframework/EmuOptions.hh>
 #include <emuframework/FilePicker.hh>
 #include <imagine/gui/TextEntry.hh>
 #include <algorithm>
+#include "private.hh"
 
 using namespace IG;
 
@@ -47,11 +49,11 @@ static FS::PathString savePathStrToDescStr(char *savePathStr)
 }
 
 BiosSelectMenu::BiosSelectMenu(const char *name, FS::PathString *biosPathStr_, BiosChangeDelegate onBiosChange_,
-	EmuSystem::NameFilterFunc fsFilter_, Base::Window &win):
+	EmuSystem::NameFilterFunc fsFilter_, ViewAttachParams attach):
 	TableView
 	{
 		name,
-		win,
+		attach,
 		[this](const TableView &)
 		{
 			return 2;
@@ -71,7 +73,7 @@ BiosSelectMenu::BiosSelectMenu(const char *name, FS::PathString *biosPathStr_, B
 		[this](TextMenuItem &, View &, Input::Event e)
 		{
 			auto startPath = strlen(biosPathStr->data()) ? FS::dirname(*biosPathStr) : lastLoadPath;
-			auto &fPicker = *new EmuFilePicker{window(), startPath.data(), false, fsFilter};
+			auto &fPicker = *new EmuFilePicker{attachParams(), startPath.data(), false, fsFilter};
 			fPicker.setOnSelectFile(
 				[this](FSPicker &picker, const char* name, Input::Event e)
 				{
@@ -115,7 +117,6 @@ static void setAutoSaveState(uint val)
 #ifdef __ANDROID__
 static bool setAndroidTextureStorage(uint8 mode)
 {
-	using namespace Gfx;
 	static auto resetVideo =
 		[]()
 		{
@@ -124,14 +125,13 @@ static bool setAndroidTextureStorage(uint8 mode)
 				// texture may switch to external format so
 				// force effect shaders to re-compile
 				emuVideoLayer.setEffect(0);
-				emuVideo.reinitImage();
-				emuVideo.clearImage();
+				emuVideo.resetImage();
 				#ifdef CONFIG_GFX_OPENGL_SHADER_PIPELINE
 				emuVideoLayer.setEffect(optionImgEffect);
 				#endif
 			}
 		};
-	if(!Gfx::Texture::setAndroidStorageImpl(makeAndroidStorageImpl(mode)))
+	if(!Gfx::Texture::setAndroidStorageImpl(emuVideo.renderer(), makeAndroidStorageImpl(mode)))
 	{
 		return false;
 	}
@@ -158,7 +158,7 @@ static void setAudioRate(uint rate)
 static void setMenuOrientation(uint val)
 {
 	optionMenuOrientation = val;
-	Gfx::setWindowValidOrientations(mainWin.win, optionMenuOrientation);
+	emuVideo.renderer().setWindowValidOrientations(mainWin.win, optionMenuOrientation);
 	logMsg("set menu orientation: %s", Base::orientationToStr(int(optionMenuOrientation)));
 }
 
@@ -208,7 +208,7 @@ static void setImgEffect(uint val)
 static void setOverlayEffect(uint val)
 {
 	optionOverlayEffect = val;
-	emuVideoLayer.vidImgOverlay.setEffect(val);
+	emuVideoLayer.setOverlay(val);
 	emuVideoLayer.placeOverlay();
 	emuWin->win.postDraw();
 }
@@ -216,7 +216,7 @@ static void setOverlayEffect(uint val)
 static void setOverlayEffectLevel(uint val)
 {
 	optionOverlayEffectLevel = val;
-	emuVideoLayer.vidImgOverlay.intensity = val/100.;
+	emuVideoLayer.setOverlayIntensity(val/100.);
 	emuWin->win.postDraw();
 }
 
@@ -226,7 +226,7 @@ static void setImgEffectPixelFormat(PixelFormatID format)
 	if(format == PIXEL_NONE)
 		popup.printf(3, false, "Set RGB565 mode via Auto");
 	optionImageEffectPixelFormat = format;
-	emuVideoLayer.vidImgEffect.setBitDepth(format == PIXEL_RGBA8888 ? 32 : 16);
+	emuVideoLayer.setEffectBitDepth(format == PIXEL_RGBA8888 ? 32 : 16);
 	emuWin->win.postDraw();
 }
 #endif
@@ -250,7 +250,7 @@ static void setWindowPixelFormat(PixelFormatID format)
 static void setFontSize(uint val)
 {
 	optionFontSize = val;
-	setupFont();
+	setupFont(emuVideo.renderer());
 	placeElements();
 }
 
@@ -274,14 +274,14 @@ public:
 		onPathChange.callSafe(optionSavePath);
 	}
 
-	void init(Input::Event e)
+	void init(Gfx::Renderer &r, Input::Event e)
 	{
-		auto &multiChoiceView = *new TextTableView{"Save Path", mainWin.win, 3};
+		auto &multiChoiceView = *new TextTableView{"Save Path", {mainWin.win, r}, 3};
 		multiChoiceView.appendItem("Set Custom Path",
-			[this](TextMenuItem &, View &, Input::Event e)
+			[this](TextMenuItem &, View &view, Input::Event e)
 			{
 				auto startPath = strlen(optionSavePath) ? optionSavePath : optionLastLoadPath;
-				auto &fPicker = *new EmuFilePicker{mainWin.win, startPath, true, {}};
+				auto &fPicker = *new EmuFilePicker{{mainWin.win, view.renderer()}, startPath, true, {}};
 				fPicker.setOnClose(
 					[this](FSPicker &picker, Input::Event e)
 					{
@@ -326,21 +326,21 @@ public:
 	uint callbacks = 0;
 	std::array<char, 32> fpsStr{};
 
-	DetectFrameRateView(Base::Window &win): View(win),
+	DetectFrameRateView(ViewAttachParams attach): View(attach),
 		fpsText{nullptr, &View::defaultFace}
 	{
-		View::defaultFace.precacheAlphaNum();
-		View::defaultFace.precache(".");
+		View::defaultFace.precacheAlphaNum(attach.renderer);
+		View::defaultFace.precache(attach.renderer, ".");
 		fpsText.setString("Preparing to detect frame rate...");
 	}
 
-	~DetectFrameRateView() override
+	~DetectFrameRateView() final
 	{
 		setCPUNeedsLowLatency(false);
 		emuWin->win.screen()->removeOnFrame(detectFrameRate);
 	}
 
-	IG::WindowRect &viewRect() override { return viewFrame; }
+	IG::WindowRect &viewRect() final { return viewFrame; }
 
 	double totalFrameTimeSecs() const
 	{
@@ -352,30 +352,33 @@ public:
 		return totalFrameTimeSecs() / (double)totalFrames;
 	}
 
-	void place() override
+	void place() final
 	{
-		fpsText.compile(projP);
+		fpsText.compile(renderer(), projP);
 	}
 
-	void inputEvent(Input::Event e) override
+	bool inputEvent(Input::Event e) final
 	{
 		if(e.pushed() && e.isDefaultCancelButton())
 		{
 			logMsg("aborted detection");
 			popAndShow();
+			return true;
 		}
+		return false;
 	}
 
-	void draw() override
+	void draw() final
 	{
 		using namespace Gfx;
-		setColor(1., 1., 1., 1.);
-		texAlphaProgram.use(projP.makeTranslate());
-		fpsText.draw(projP.alignXToPixel(projP.bounds().xCenter()),
+		auto &r = renderer();
+		r.setColor(1., 1., 1., 1.);
+		r.texAlphaProgram.use(r, projP.makeTranslate());
+		fpsText.draw(r, projP.alignXToPixel(projP.bounds().xCenter()),
 			projP.alignYToPixel(projP.bounds().yCenter()), C2DO, projP);
 	}
 
-	void onAddedToController(Input::Event e) override
+	void onAddedToController(Input::Event e) final
 	{
 		setCPUNeedsLowLatency(true);
 		detectFrameRate =
@@ -416,7 +419,7 @@ public:
 								{
 									string_printf(fpsStr, "%.2ffps", 1. / averageFrameTimeSecs());
 									fpsText.setString(fpsStr.data());
-									fpsText.compile(projP);
+									fpsText.compile(renderer(), projP);
 								}
 							}
 							if(totalFrames >= framesToTime)
@@ -450,10 +453,10 @@ public:
 
 	constexpr FrameRateSelectMenu() {}
 
-	void init(EmuSystem::VideoSystem vidSys, Input::Event e)
+	void init(Gfx::Renderer &r, EmuSystem::VideoSystem vidSys, Input::Event e)
 	{
 		const bool includeFrameRateDetection = !Config::envIsIOS;
-		auto &multiChoiceView = *new TextTableView{"Frame Rate", mainWin.win, includeFrameRateDetection ? 4 : 3};
+		auto &multiChoiceView = *new TextTableView{"Frame Rate", {mainWin.win, r}, includeFrameRateDetection ? 4 : 3};
 		multiChoiceView.appendItem("Set with screen's reported rate",
 			[this](TextMenuItem &, View &view, Input::Event e)
 			{
@@ -484,9 +487,9 @@ public:
 		multiChoiceView.appendItem("Set custom rate",
 			[this](TextMenuItem &, View &view, Input::Event e)
 			{
-				auto &textInputView = *new CollectTextInputView{view.window()};
-				textInputView.init("Input decimal or fraction", "", getCollectTextCloseAsset());
-				textInputView.onText() =
+				auto attach = view.attachParams();
+				view.popAndShow();
+				EmuApp::pushAndShowNewCollectTextInputView(attach, e, "Input decimal or fraction", "",
 					[this](CollectTextInputView &view, const char *str)
 					{
 						if(str)
@@ -509,16 +512,14 @@ public:
 						}
 						view.dismiss();
 						return 0;
-					};
-				view.popAndShow();
-				modalViewController.pushAndShow(textInputView, e);
+					});
 			});
 		if(includeFrameRateDetection)
 		{
 			multiChoiceView.appendItem("Detect screen's rate and set",
 				[this](TextMenuItem &, View &view, Input::Event e)
 				{
-					auto &frView = *new DetectFrameRateView{view.window()};
+					auto &frView = *new DetectFrameRateView{view.attachParams()};
 					frView.onDetectFrameTime =
 						[this](double frameTime)
 						{
@@ -546,15 +547,15 @@ void FirmwarePathSelector::onClose(FSPicker &picker, Input::Event e)
 	onPathChange.callSafe(optionFirmwarePath);
 }
 
-void FirmwarePathSelector::init(const char *name, Input::Event e)
+void FirmwarePathSelector::init(Gfx::Renderer &r, const char *name, Input::Event e)
 {
-	auto &multiChoiceView = *new TextTableView{name, mainWin.win, 2};
+	auto &multiChoiceView = *new TextTableView{name, {mainWin.win, r}, 2};
 	multiChoiceView.appendItem("Set Custom Path",
-		[this](TextMenuItem &, View &, Input::Event e)
+		[this](TextMenuItem &, View &view, Input::Event e)
 		{
 			viewStack.popAndShow();
 			auto startPath = strlen(optionFirmwarePath) ? optionFirmwarePath : optionLastLoadPath;
-			auto &fPicker = *new EmuFilePicker{mainWin.win, startPath, true, {}};
+			auto &fPicker = *new EmuFilePicker{{mainWin.win, view.renderer()}, startPath, true, {}};
 			fPicker.setOnClose(
 				[this](FSPicker &picker, Input::Event e)
 				{
@@ -724,8 +725,8 @@ void GUIOptionView::loadStockItems()
 	}
 }
 
-VideoOptionView::VideoOptionView(Base::Window &win, bool customMenu):
-	TableView{"Video Options", win, item},
+VideoOptionView::VideoOptionView(ViewAttachParams attach, bool customMenu):
+	TableView{"Video Options", attach, item},
 	#ifdef __ANDROID__
 	androidTextureStorageItem
 	{
@@ -734,7 +735,7 @@ VideoOptionView::VideoOptionView(Base::Window &win, bool customMenu):
 			[this]()
 			{
 				setAndroidTextureStorage(OPTION_ANDROID_TEXTURE_STORAGE_AUTO);
-				popup.printf(3, false, "Set %s mode via Auto", Gfx::Texture::androidStorageImplStr());
+				popup.printf(3, false, "Set %s mode via Auto", Gfx::Texture::androidStorageImplStr(renderer()));
 			}
 		},
 		{
@@ -760,7 +761,7 @@ VideoOptionView::VideoOptionView(Base::Window &win, bool customMenu):
 					};
 				if(!Gfx::Texture::isAndroidGraphicBufferStorageWhitelisted())
 				{
-					auto &ynAlertView = *new YesNoAlertView{view.window(),
+					auto &ynAlertView = *new YesNoAlertView{view.attachParams(),
 						"Setting Graphic Buffer improves performance but may hang or crash "
 						"the app depending on your device or GPU",
 						"OK", "Cancel"};
@@ -843,7 +844,7 @@ VideoOptionView::VideoOptionView(Base::Window &win, bool customMenu):
 		frameRateStr,
 		[this](TextMenuItem &, View &, Input::Event e)
 		{
-			frameRateSelectMenu.init(EmuSystem::VIDSYS_NATIVE_NTSC, e);
+			frameRateSelectMenu.init(renderer(), EmuSystem::VIDSYS_NATIVE_NTSC, e);
 			frameRateSelectMenu.onFrameTimeChange =
 				[this](double time)
 				{
@@ -860,7 +861,7 @@ VideoOptionView::VideoOptionView(Base::Window &win, bool customMenu):
 					EmuSystem::configFrameTime();
 					optionFrameRate = time;
 					printFrameRateStr(frameRateStr);
-					frameRate.compile(projP);
+					frameRate.compile(renderer(), projP);
 				};
 			postDraw();
 		}
@@ -870,7 +871,7 @@ VideoOptionView::VideoOptionView(Base::Window &win, bool customMenu):
 		frameRatePALStr,
 		[this](TextMenuItem &, View &, Input::Event e)
 		{
-			frameRateSelectMenu.init(EmuSystem::VIDSYS_PAL, e);
+			frameRateSelectMenu.init(renderer(), EmuSystem::VIDSYS_PAL, e);
 			frameRateSelectMenu.onFrameTimeChange =
 				[this](double time)
 				{
@@ -887,7 +888,7 @@ VideoOptionView::VideoOptionView(Base::Window &win, bool customMenu):
 					EmuSystem::configFrameTime();
 					optionFrameRatePAL = time;
 					printFrameRatePALStr(frameRatePALStr);
-					frameRatePAL.compile(projP);
+					frameRatePAL.compile(renderer(), projP);
 				};
 			postDraw();
 		}
@@ -1125,7 +1126,7 @@ VideoOptionView::VideoOptionView(Base::Window &win, bool customMenu):
 		[this](BoolMenuItem &item, View &, Input::Event e)
 		{
 			optionDitherImage = item.flipBoolValue(*this);
-			Gfx::setDither(optionDitherImage);
+			renderer().setDither(optionDitherImage);
 		}
 	}
 {
@@ -1150,8 +1151,8 @@ VideoOptionView::VideoOptionView(Base::Window &win, bool customMenu):
 	}
 }
 
-AudioOptionView::AudioOptionView(Base::Window &win, bool customMenu):
-	TableView{"Audio Options", win, item},
+AudioOptionView::AudioOptionView(ViewAttachParams attach, bool customMenu):
+	TableView{"Audio Options", attach, item},
 	snd
 	{
 		"Sound",
@@ -1251,8 +1252,8 @@ AudioOptionView::AudioOptionView(Base::Window &win, bool customMenu):
 	}
 }
 
-SystemOptionView::SystemOptionView(Base::Window &win, bool customMenu):
-	TableView{"System Options", win, item},
+SystemOptionView::SystemOptionView(ViewAttachParams attach, bool customMenu):
+	TableView{"System Options", attach, item},
 	autoSaveStateItem
 	{
 		{"Off", [this]() { setAutoSaveState(0); }},
@@ -1296,9 +1297,9 @@ SystemOptionView::SystemOptionView(Base::Window &win, bool customMenu):
 	savePath
 	{
 		savePathStr,
-		[this](TextMenuItem &, View &, Input::Event e)
+		[this](TextMenuItem &, View &view, Input::Event e)
 		{
-			pathSelectMenu.init(e);
+			pathSelectMenu.init(view.renderer(), e);
 			pathSelectMenu.onPathChange =
 				[this](const char *newPath)
 				{
@@ -1308,7 +1309,7 @@ SystemOptionView::SystemOptionView(Base::Window &win, bool customMenu):
 						popup.printf(4, false, "Default Save Path:\n%s", path.data());
 					}
 					printPathMenuEntryStr(savePathStr);
-					savePath.compile(projP);
+					savePath.compile(renderer(), projP);
 					EmuSystem::setupGameSavePath();
 					EmuSystem::savePathChanged();
 				};
@@ -1410,8 +1411,8 @@ SystemOptionView::SystemOptionView(Base::Window &win, bool customMenu):
 	}
 }
 
-GUIOptionView::GUIOptionView(Base::Window &win, bool customMenu):
-	TableView{"GUI Options", win, item},
+GUIOptionView::GUIOptionView(ViewAttachParams attach, bool customMenu):
+	TableView{"GUI Options", attach, item},
 	pauseUnfocused
 	{
 		Config::envIsPS3 ? "Pause in XMB" : "Pause if unfocused",

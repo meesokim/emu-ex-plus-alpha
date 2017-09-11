@@ -338,7 +338,7 @@ void clearCheats()
 
 	//logMsg("reversing applied cheats");
   // disable cheats in reversed order in case the same address is used by multiple patches
-  for(auto &e : makeReverseRange(cheatList))
+  for(auto &e : IG::makeReverseRange(cheatList))
   {
     if(e.isApplied())
     {
@@ -525,11 +525,11 @@ void EmuEditCheatView::renamed(const char *str)
 	cheatsModified = 1;
 }
 
-EmuEditCheatView::EmuEditCheatView(Base::Window &win, MdCheat &cheat_):
+EmuEditCheatView::EmuEditCheatView(ViewAttachParams attach, MdCheat &cheat_):
 	BaseEditCheatView
 	{
 		"Edit Code",
-		win,
+		attach,
 		cheat_.name,
 		[this](const TableView &)
 		{
@@ -548,7 +548,7 @@ EmuEditCheatView::EmuEditCheatView(Base::Window &win, MdCheat &cheat_):
 		{
 			cheatList.remove(*cheat);
 			cheatsModified = 1;
-			refreshCheatViews();
+			EmuApp::refreshCheatViews();
 			updateCheats();
 			dismiss();
 			return true;
@@ -560,9 +560,7 @@ EmuEditCheatView::EmuEditCheatView(Base::Window &win, MdCheat &cheat_):
 		cheat_.code,
 		[this](DualTextMenuItem &item, View &, Input::Event e)
 		{
-			auto &textInputView = *new CollectTextInputView{window()};
-			textInputView.init(emuSystemIs16Bit() ? INPUT_CODE_16BIT_STR : INPUT_CODE_8BIT_STR, cheat->code, getCollectTextCloseAsset());
-			textInputView.onText() =
+			EmuApp::pushAndShowNewCollectTextInputView(attachParams(), e, emuSystemIs16Bit() ? INPUT_CODE_16BIT_STR : INPUT_CODE_8BIT_STR, cheat->code,
 				[this](CollectTextInputView &view, const char *str)
 				{
 					if(str)
@@ -572,20 +570,19 @@ EmuEditCheatView::EmuEditCheatView(Base::Window &win, MdCheat &cheat_):
 						if(!decodeCheat(cheat->code, cheat->address, cheat->data, cheat->origData))
 						{
 							cheat->code[0]= 0;
-							popup.postError("Invalid code");
+							EmuApp::postMessage(true, "Invalid code");
 							window().postDraw();
 							return 1;
 						}
 
 						cheatsModified = 1;
 						updateCheats();
-						code.compile(projP);
+						code.compile(renderer(), projP);
 						window().postDraw();
 					}
 					view.dismiss();
 					return 0;
-				};
-			modalViewController.pushAndShow(textInputView, e);
+				});
 		}
 	},
 	cheat{&cheat_}
@@ -603,17 +600,17 @@ void EmuEditCheatListView::loadCheatItems()
 		cheat.emplace_back(thisCheat.name,
 			[this, c](TextMenuItem &, View &, Input::Event e)
 			{
-				auto &editCheatView = *new EmuEditCheatView{window(), cheatList[c]};
-				viewStack.pushAndShow(editCheatView, e);
+				auto &editCheatView = *new EmuEditCheatView{attachParams(), cheatList[c]};
+				pushAndShow(editCheatView, e);
 			});
 		++it;
 	}
 }
 
-EmuEditCheatListView::EmuEditCheatListView(Base::Window &win):
+EmuEditCheatListView::EmuEditCheatListView(ViewAttachParams attach):
 	BaseEditCheatListView
 	{
-		win,
+		attach,
 		[this](const TableView &)
 		{
 			return 1 + cheat.size();
@@ -632,16 +629,14 @@ EmuEditCheatListView::EmuEditCheatListView(Base::Window &win):
 		"Add Game Genie / Action Replay Code",
 		[this](TextMenuItem &item, View &, Input::Event e)
 		{
-			auto &textInputView = *new CollectTextInputView{window()};
-			textInputView.init(emuSystemIs16Bit() ? INPUT_CODE_16BIT_STR : INPUT_CODE_8BIT_STR, getCollectTextCloseAsset());
-			textInputView.onText() =
+			EmuApp::pushAndShowNewCollectTextInputView(attachParams(), e, emuSystemIs16Bit() ? INPUT_CODE_16BIT_STR : INPUT_CODE_8BIT_STR, "",
 				[this](CollectTextInputView &view, const char *str)
 				{
 					if(str)
 					{
 						if(cheatList.isFull())
 						{
-							popup.postError("Cheat list is full");
+							EmuApp::postMessage(true, "Cheat list is full");
 							view.dismiss();
 							return 0;
 						}
@@ -650,7 +645,7 @@ EmuEditCheatListView::EmuEditCheatListView(Base::Window &win):
 						string_toUpper(c.code);
 						if(!decodeCheat(c.code, c.address, c.data, c.origData))
 						{
-							popup.postError("Invalid code");
+							EmuApp::postMessage(true, "Invalid code");
 							return 1;
 						}
 						string_copy(c.name, "Unnamed Cheat");
@@ -659,15 +654,14 @@ EmuEditCheatListView::EmuEditCheatListView(Base::Window &win):
 						cheatsModified = 1;
 						updateCheats();
 						view.dismiss();
-						auto &textInputView = *new CollectTextInputView{window()};
-						textInputView.init("Input description", getCollectTextCloseAsset());
-						textInputView.onText() =
+						EmuApp::refreshCheatViews();
+						EmuApp::pushAndShowNewCollectTextInputView(attachParams(), {}, "Input description", "",
 							[](CollectTextInputView &view, const char *str)
 							{
 								if(str)
 								{
 									string_copy(cheatList.back().name, str);
-									refreshCheatViews();
+									EmuApp::refreshCheatViews();
 									view.dismiss();
 								}
 								else
@@ -675,24 +669,21 @@ EmuEditCheatListView::EmuEditCheatListView(Base::Window &win):
 									view.dismiss();
 								}
 								return 0;
-							};
-						refreshCheatViews();
-						modalViewController.pushAndShow(textInputView, {});
+							});
 					}
 					else
 					{
 						view.dismiss();
 					}
 					return 0;
-				};
-			modalViewController.pushAndShow(textInputView, e);
+				});
 		}
 	}
 {
 	loadCheatItems();
 }
 
-EmuCheatsView::EmuCheatsView(Base::Window &win): BaseCheatsView{win}
+EmuCheatsView::EmuCheatsView(ViewAttachParams attach): BaseCheatsView{attach}
 {
 	loadCheatItems();
 }

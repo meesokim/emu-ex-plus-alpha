@@ -14,6 +14,7 @@
 	along with MD.emu.  If not, see <http://www.gnu.org/licenses/> */
 
 #include <emuframework/EmuApp.hh>
+#include <emuframework/EmuInput.hh>
 #include "internal.hh"
 
 enum
@@ -45,18 +46,15 @@ Byte1Option optionVideoSystem{CFGKEY_VIDEO_SYSTEM, 0};
 
 void EmuSystem::initOptions()
 {
-	#ifdef CONFIG_VCONTROLS_GAMEPAD
-	optionTouchCtrlSize.initDefault(750);
-	optionTouchCtrlBtnSpace.initDefault(100);
-	#endif
+	EmuApp::setDefaultVControlsButtonSize(750);
+	EmuApp::setDefaultVControlsButtonSpacing(100);
 }
 
-void EmuSystem::onOptionsLoaded()
+EmuSystem::Error EmuSystem::onOptionsLoaded()
 {
-	#ifdef CONFIG_VCONTROLS_GAMEPAD
-	vController.gp.activeFaceBtns = option6BtnPad ? 6 : 3;
-	#endif
+	EmuControls::setActiveFaceButtons(option6BtnPad ? 6 : 3);
 	config_ym2413_enabled = optionSmsFM;
+	return {};
 }
 
 bool EmuSystem::readConfig(IO &io, uint key, uint readSize)

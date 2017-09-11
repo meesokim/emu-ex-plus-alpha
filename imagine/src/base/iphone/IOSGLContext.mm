@@ -117,7 +117,7 @@ GLContext::GLContext(GLDisplay display, GLContextAttributes attr, GLBufferConfig
 			newContext = [[EAGLContext alloc] initWithAPI:kEAGLRenderingAPIOpenGLES3];
 		#endif
 		bdefault:
-			bug_exit("unsupported OpenGL ES major version:%d", attr.majorVersion());
+			logErr("unsupported OpenGL ES major version:%d", attr.majorVersion());
 	}
 	if(!newContext)
 	{
@@ -214,6 +214,11 @@ bool GLContext::bindAPI(API api)
 void *GLContext::procAddress(const char *funcName)
 {
 	return dlsym(RTLD_DEFAULT, funcName);
+}
+
+NativeGLContext GLContext::nativeObject()
+{
+	return context_;
 }
 
 Base::NativeWindowFormat GLBufferConfig::windowFormat(GLDisplay)

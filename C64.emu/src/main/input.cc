@@ -13,7 +13,8 @@
 	You should have received a copy of the GNU General Public License
 	along with C64.emu.  If not, see <http://www.gnu.org/licenses/> */
 
-#include <emuframework/EmuSystem.hh>
+#include <emuframework/EmuApp.hh>
+#include <emuframework/EmuInput.hh>
 #include "internal.hh"
 
 enum
@@ -402,7 +403,7 @@ uint EmuSystem::translateInputAction(uint input, bool &turbo)
 
 		case c64KeySpace : return KB_SPACE;
 		case c64KeyCtrlLock : return KBEX_CTRL_LOCK;
-		default: bug_branch("%d", input);
+		default: bug_unreachable("input == %d", input);
 	}
 	return 0;
 }
@@ -464,14 +465,14 @@ void EmuSystem::handleInputAction(uint state, uint emuKey)
 						optionSwapJoystickPorts = 0;
 					else
 						optionSwapJoystickPorts = 1;
-					popup.post("Swapped Joystick Ports", 1);
+					EmuApp::postMessage(1, false, "Swapped Joystick Ports");
 				}
 				return;
 			}
 			case KBEX_TOGGLE_VKEYBOARD:
 			{
 				if(state == Input::PUSHED)
-					vController.toggleKeyboard();
+					EmuControls::toggleKeyboard();
 				return;
 			}
 			case KBEX_SHIFT_LOCK:
@@ -479,7 +480,7 @@ void EmuSystem::handleInputAction(uint state, uint emuKey)
 				if(state == Input::PUSHED)
 				{
 					shiftLock ^= true;
-					vController.updateKeyboardMapping();
+					EmuControls::updateKeyboardMapping();
 				}
 				return;
 			}
@@ -508,7 +509,7 @@ void EmuSystem::handleInputAction(uint state, uint emuKey)
 	}
 }
 
-void EmuSystem::clearInputBuffers()
+void EmuSystem::clearInputBuffers(EmuInputView &)
 {
 	auto &keyarr = *plugin.keyarr;
 	auto &rev_keyarr = *plugin.rev_keyarr;

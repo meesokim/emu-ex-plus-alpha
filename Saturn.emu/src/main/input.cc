@@ -1,4 +1,5 @@
 #include <emuframework/EmuApp.hh>
+#include <emuframework/EmuInput.hh>
 #include "internal.hh"
 
 enum
@@ -78,7 +79,7 @@ uint EmuSystem::translateInputAction(uint input, bool &turbo)
 		case ssKeyIdxATurbo + EmuControls::gamepadKeys:
 		case ssKeyIdxBTurbo + EmuControls::gamepadKeys:
 		case ssKeyIdxCTurbo + EmuControls::gamepadKeys:
-			turbo = 1;
+			turbo = 1; [[fallthrough]];
 		default: return input;
 	}
 }
@@ -122,11 +123,11 @@ void EmuSystem::handleInputAction(uint state, uint emuKey)
 		case ssKeyIdxC: if(pushed) PerPadCPressed(p); else PerPadCReleased(p);
 		bcase ssKeyIdxL: if(pushed) PerPadLTriggerPressed(p); else PerPadLTriggerReleased(p);
 		bcase ssKeyIdxR: if(pushed) PerPadRTriggerPressed(p); else PerPadRTriggerReleased(p);
-		bdefault: bug_branch("%d", emuKey);
+		bdefault: bug_unreachable("input == %d", emuKey);
 	}
 }
 
-void EmuSystem::clearInputBuffers()
+void EmuSystem::clearInputBuffers(EmuInputView &)
 {
 	PerPortReset();
 	pad[0] = PerPadAdd(&PORTDATA1);

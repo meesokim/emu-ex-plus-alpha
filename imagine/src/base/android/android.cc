@@ -27,7 +27,7 @@
 #include <imagine/fs/FS.hh>
 #include <imagine/util/fd-utils.h>
 #include <imagine/util/bits.h>
-#include <imagine/util/assume.h>
+#include <imagine/util/utility.h>
 #include <imagine/util/algorithm.h>
 #include "../common/windowPrivate.hh"
 #include "../common/basePrivate.hh"
@@ -45,8 +45,7 @@ static JavaInstMethod<void()> jRecycle{};
 jclass jBaseActivityCls{};
 jobject jBaseActivity{};
 uint appState = APP_PAUSED;
-bool aHasFocus = true;
-static AConfiguration *aConfig{};
+static bool aHasFocus = true;
 static AAssetManager *assetManager{};
 static JavaInstMethod<void(jint)> jSetUIVisibility{};
 static JavaInstMethod<jobject()> jNewFontRenderer{};
@@ -103,11 +102,25 @@ FS::PathString documentsPath()
 	if(Base::androidSDK() < 11) // bug in pre-3.0 Android causes paths in ANativeActivity to be null
 	{
 		//logMsg("ignoring paths from ANativeActivity due to Android 2.3 bug");
-		auto env = jEnv();
+		JNIEnv *env;
+		auto res = jVM->GetEnv((void**)&env, JNI_VERSION_1_6);
+		bool shouldDetach = false;
+		if(res != JNI_OK)
+		{
+			logMsg("attaching thread to JNI for documentsPath()");
+			if(jVM->AttachCurrentThread(&env, nullptr) != 0)
+			{
+				logErr("error attaching env to thread");
+				return {};
+			}
+			shouldDetach = true;
+		}
 		JavaInstMethod<jobject()> filesDir{env, jBaseActivityCls, "filesDir", "()Ljava/lang/String;"};
 		auto filesDirStr = (jstring)filesDir(env, jBaseActivity);
 		FS::PathString path{};
 		javaStringCopy(env, path, filesDirStr);
+		if(shouldDetach)
+			jVM->DetachCurrentThread();
 		return path;
 	}
 	else
@@ -116,11 +129,25 @@ FS::PathString documentsPath()
 
 FS::PathString storagePath()
 {
-	auto env = jEnv();
+	JNIEnv *env;
+	auto res = jVM->GetEnv((void**)&env, JNI_VERSION_1_6);
+	bool shouldDetach = false;
+	if(res != JNI_OK)
+	{
+		logMsg("attaching thread to JNI for storagePath()");
+		if(jVM->AttachCurrentThread(&env, nullptr) != 0)
+		{
+			logErr("error attaching env to thread");
+			return {};
+		}
+		shouldDetach = true;
+	}
 	JavaClassMethod<jobject()> extStorageDir{env, jBaseActivityCls, "extStorageDir", "()Ljava/lang/String;"};
 	auto extStorageDirStr = (jstring)extStorageDir(env, jBaseActivityCls);
 	FS::PathString path{};
 	javaStringCopy(env, path, extStorageDirStr);
+	if(shouldDetach)
+		jVM->DetachCurrentThread();
 	return path;
 }
 
@@ -246,7 +273,8 @@ static void activityInit(JNIEnv* env, jobject activity)
 					([](JNIEnv* env, jobject thiz, jlong windowAddr, jint x, jint y, jint x2, jint y2, jint winWidth, jint winHeight)
 					{
 						auto win = windowAddr ? (Window*)windowAddr : deviceWindow();
-						win->setContentRect({x, y, x2, y2}, {winWidth, winHeight});
+						if(likely(win))
+							win->setContentRect({x, y, x2, y2}, {winWidth, winHeight});
 					})
 				}
 			};
@@ -379,15 +407,9 @@ void setSysUIStyle(uint flags)
 		return;
 	}
 	auto env = jEnv();
-	// Using SYSTEM_UI_FLAG_FULLSCREEN has an odd delay when
-	// combined with SYSTEM_UI_FLAG_HIDE_NAVIGATION, so we'll
-	// set the window flag even on Android 4.1+.
-	// TODO: Re-test on Android versions after 4.4 for any change
-	//if(androidSDK() < 16)
-	{
-		// handle status bar hiding via full-screen window flag
-		setStatusBarHidden(env, flags & SYS_UI_STYLE_HIDE_STATUS);
-	}
+	// always handle status bar hiding via full-screen window flag
+	// even on SDK level >= 11 so our custom view has the correct insets
+	setStatusBarHidden(env, flags & SYS_UI_STYLE_HIDE_STATUS);
 	if(androidSDK() >= 11)
 	{
 		constexpr uint SYSTEM_UI_FLAG_IMMERSIVE_STICKY = 0x1000;
@@ -439,6 +461,7 @@ static void setNativeActivityCallbacks(ANativeActivity* activity)
 			#ifdef CONFIG_INPUT_ANDROID_MOGA
 			Input::onResumeMOGA(jEnv(), true);
 			#endif
+			Input::registerDeviceChangeListener();
 		};
 	//activity->callbacks->onSaveInstanceState = nullptr; // unused
 	activity->callbacks->onPause =
@@ -457,6 +480,7 @@ static void setNativeActivityCallbacks(ANativeActivity* activity)
 			#ifdef CONFIG_INPUT_ANDROID_MOGA
 			Input::onPauseMOGA(activity->env);
 			#endif
+			Input::unregisterDeviceChangeListener();
 			Input::deinitKeyRepeatTimer();
 		};
 	activity->callbacks->onStop =
@@ -476,6 +500,8 @@ static void setNativeActivityCallbacks(ANativeActivity* activity)
 	activity->callbacks->onConfigurationChanged =
 		[](ANativeActivity *activity)
 		{
+			auto aConfig = AConfiguration_new();
+			auto freeConfig = IG::scopeGuard([&](){ AConfiguration_delete(aConfig); });
 			AConfiguration_fromAssetManager(aConfig, activity->assetManager);
 			auto rotation = mainScreen().rotation(activity->env);
 			if(rotation != osRotation)
@@ -513,6 +539,8 @@ static void setNativeActivityCallbacks(ANativeActivity* activity)
 	activity->callbacks->onNativeWindowCreated =
 		[](ANativeActivity *activity, ANativeWindow *nWin)
 		{
+			if(unlikely(!deviceWindow()))
+				return;
 			if(Base::androidSDK() < 11)
 			{
 				// In testing with CM7 on a Droid, the surface is re-created in RGBA8888 upon
@@ -531,6 +559,8 @@ static void setNativeActivityCallbacks(ANativeActivity* activity)
 	activity->callbacks->onNativeWindowDestroyed =
 		[](ANativeActivity *, ANativeWindow *)
 		{
+			if(unlikely(!deviceWindow()))
+				return;
 			deviceWindow()->setNativeWindow(nullptr);
 		};
 	// Note: Surface resizing handled by ContentView callback
@@ -538,6 +568,8 @@ static void setNativeActivityCallbacks(ANativeActivity* activity)
 	activity->callbacks->onNativeWindowRedrawNeeded =
 		[](ANativeActivity *, ANativeWindow *)
 		{
+			if(unlikely(!deviceWindow()))
+				return;
 			androidWindowNeedsRedraw(*deviceWindow());
 		};
 	activity->callbacks->onInputQueueCreated =
@@ -579,13 +611,16 @@ CLINK void LVISIBLE ANativeActivity_onCreate(ANativeActivity* activity, void* sa
 	filesDir = activity->internalDataPath;
 	activityInit(jEnv_, activity->clazz);
 	setNativeActivityCallbacks(activity);
-	Input::init();
-	aConfig = AConfiguration_new();
-	AConfiguration_fromAssetManager(aConfig, activity->assetManager);
-	initConfig(aConfig);
-	onInit(0, nullptr);
-	if(!Window::windows())
+	Input::init(jEnv_);
 	{
-		bug_exit("didn't create a window");
+		auto aConfig = AConfiguration_new();
+		auto freeConfig = IG::scopeGuard([&](){ AConfiguration_delete(aConfig); });
+		AConfiguration_fromAssetManager(aConfig, activity->assetManager);
+		initConfig(aConfig);
+	}
+	onInit(0, nullptr);
+	if(Config::DEBUG_BUILD && !Window::windows())
+	{
+		logWarn("didn't create a window");
 	}
 }

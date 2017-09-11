@@ -17,8 +17,8 @@
 
 #include <imagine/gui/TableView.hh>
 #include <imagine/util/container/ArrayList.hh>
-#include <emuframework/EmuOptions.hh>
 #include <imagine/gui/TextTableView.hh>
+#include <emuframework/EmuSystem.hh>
 
 class TouchConfigView : public TableView
 {
@@ -84,7 +84,7 @@ public:
 	void refreshTouchConfigMenu();
 
 public:
-	TouchConfigView(Base::Window &win, const char *faceBtnName, const char *centerBtnName);
-	void place() override;
-	void draw() override;
+	TouchConfigView(ViewAttachParams attach, const char *faceBtnName, const char *centerBtnName);
+	void place() final;
+	void draw() final;
 };

@@ -50,7 +50,7 @@ void BaseWindow::setOnDragDrop(DragDropDelegate del)
 
 void BaseWindow::setOnInputEvent(InputEventDelegate del)
 {
-	onInputEvent = del ? del : [](Window &, Input::Event ){};
+	onInputEvent = del ? del : [](Window &, Input::Event ){ return false; };
 }
 
 void BaseWindow::setOnDismissRequest(DismissRequestDelegate del)
@@ -183,9 +183,9 @@ void Window::setNeedsCustomViewportResize(bool needsResize)
 
 }
 
-void Window::dispatchInputEvent(Input::Event event)
+bool Window::dispatchInputEvent(Input::Event event)
 {
-	onInputEvent.callCopy(*this, event);
+	return onInputEvent.callCopy(*this, event);
 }
 
 void Window::dispatchFocusChange(bool in)
@@ -310,7 +310,7 @@ bool Window::setValidOrientations(uint oMask)
 			return requestOrientationChange(VIEW_ROTATE_270);
 		else
 		{
-			bug_exit("bad orientation mask: 0x%X", oMask);
+			bug_unreachable("bad orientation mask: 0x%X", oMask);
 		}
 	}
 	return false;

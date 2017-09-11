@@ -8,10 +8,10 @@ uint decodeCheat(const char *string, uint32 &address, uint16 &data, uint16 &orig
 class EmuCheatsView : public BaseCheatsView
 {
 private:
-	void loadCheatItems() override;
+	void loadCheatItems() final;
 
 public:
-	EmuCheatsView(Base::Window &win);
+	EmuCheatsView(ViewAttachParams attach);
 };
 
 class EmuEditCheatListView : public BaseEditCheatListView
@@ -19,10 +19,10 @@ class EmuEditCheatListView : public BaseEditCheatListView
 private:
 	TextMenuItem addCode{};
 
-	void loadCheatItems() override;
+	void loadCheatItems() final;
 
 public:
-	EmuEditCheatListView(Base::Window &win);
+	EmuEditCheatListView(ViewAttachParams attach);
 };
 
 class EmuEditCheatView : public BaseEditCheatView
@@ -31,8 +31,8 @@ private:
 	DualTextMenuItem code{};
 	MdCheat *cheat{};
 
-	void renamed(const char *str) override;
+	void renamed(const char *str) final;
 
 public:
-	EmuEditCheatView(Base::Window &win, MdCheat &cheat);
+	EmuEditCheatView(ViewAttachParams attach, MdCheat &cheat);
 };

@@ -21,7 +21,6 @@
 #include <imagine/base/WindowConfig.hh>
 #include <imagine/pixmap/PixelFormat.hh>
 #include <imagine/util/rectangle2.h>
-#include <imagine/util/container/ArrayList.hh>
 #include <imagine/util/DelegateFunc.hh>
 #include <imagine/util/bits.h>
 #include <imagine/input/Input.hh>
@@ -148,7 +147,7 @@ public:
 	bool updatePhysicalSize(IG::Point2D<float> surfaceSizeMM, IG::Point2D<float> surfaceSizeSMM);
 	bool updatePhysicalSizeWithCurrentSize();
 	bool hasSurface();
-	void dispatchInputEvent(Input::Event event);
+	bool dispatchInputEvent(Input::Event event);
 	void dispatchFocusChange(bool in);
 	void dispatchDragDrop(const char *filename);
 	void dispatchDismissRequest();

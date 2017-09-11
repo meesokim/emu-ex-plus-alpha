@@ -15,6 +15,9 @@
 
 #include <imagine/io/FileIO.hh>
 #include <imagine/logger/logger.h>
+#include "IOUtils.hh"
+
+template class IOUtils<PosixFileIO>;
 
 PosixFileIO::PosixFileIO()
 {
@@ -46,7 +49,7 @@ PosixFileIO &PosixFileIO::operator=(PosixFileIO &&o)
 	return *this;
 }
 
-PosixFileIO::operator GenericIO()
+GenericIO PosixFileIO::makeGeneric()
 {
 	if(usingMapIO)
 		return GenericIO{bufferMapIO()};

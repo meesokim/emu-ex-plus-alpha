@@ -16,7 +16,7 @@
 #define LOGTAG "Pixmap"
 #include <imagine/pixmap/Pixmap.hh>
 #include <imagine/logger/logger.h>
-#include <imagine/util/assume.h>
+#include <imagine/util/utility.h>
 #include <imagine/util/algorithm.h>
 #include <cstring>
 
@@ -88,6 +88,16 @@ uint Pixmap::bytes() const
 bool Pixmap::isPadded() const
 {
 	return w() != pitchPixels();
+}
+
+uint Pixmap::paddingPixels() const
+{
+	return pitchPixels() - w();
+}
+
+uint Pixmap::paddingBytes() const
+{
+	return pitchBytes() - format().pixelBytes(w());
 }
 
 void Pixmap::clear(IG::WP pos, IG::WP size)

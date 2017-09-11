@@ -34,6 +34,12 @@ public:
 	virtual void dismissView(View &v) = 0;
 };
 
+struct ViewAttachParams
+{
+	Base::Window &win;
+	Gfx::Renderer &renderer;
+};
+
 class View
 {
 public:
@@ -46,13 +52,15 @@ public:
 
 	constexpr View() {}
 	virtual ~View() {}
-	constexpr View(Base::Window &win): win(&win) {}
-	constexpr View(const char *name, Base::Window &win) : win(&win), name_(name) {}
+	constexpr View(ViewAttachParams attach):
+		win{&attach.win}, renderer_{&attach.renderer} {}
+	constexpr View(const char *name, ViewAttachParams attach):
+		win(&attach.win), renderer_{&attach.renderer}, name_(name) {}
 
 	virtual IG::WindowRect &viewRect() = 0;
 	virtual void place() = 0;
 	virtual void draw() = 0;
-	virtual void inputEvent(Input::Event event) = 0;
+	virtual bool inputEvent(Input::Event event) = 0;
 	virtual void clearSelection() {} // de-select any items from previous input
 	virtual void onShow() {}
 	virtual void onAddedToController(Input::Event e) = 0;
@@ -60,11 +68,13 @@ public:
 	void setViewRect(IG::WindowRect rect, Gfx::ProjectionPlane projP);
 	void postDraw();
 	Base::Window &window();
+	Gfx::Renderer &renderer();
+	ViewAttachParams attachParams();
 	Base::Screen *screen();
 	const char *name() { return name_; }
 	void setName(const char *name) { name_ = name; }
 	static void setNeedsBackControl(bool on);
-	static bool compileGfxPrograms();
+	static bool compileGfxPrograms(Gfx::Renderer &r);
 	void dismiss();
 	void pushAndShow(View &v, Input::Event e, bool needsNavView = true);
 	void pop();
@@ -77,6 +87,7 @@ public:
 
 protected:
 	Base::Window *win{};
+	Gfx::Renderer *renderer_{};
 	ViewController *controller{};
 	Gfx::ProjectionPlane projP{};
 	const char *name_ = "";

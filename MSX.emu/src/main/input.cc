@@ -14,6 +14,7 @@
 	along with MSX.emu.  If not, see <http://www.gnu.org/licenses/> */
 
 #include <emuframework/EmuApp.hh>
+#include <emuframework/EmuInput.hh>
 #include "internal.hh"
 
 extern "C"
@@ -123,7 +124,7 @@ void setupVKeyboardMap(uint boardType)
 			kbToEventMap2[10 + i] = EC_1 + i;
 		kbToEventMap2[23] = EC_3 | (EC_LSHIFT << 8);
 	}
-	vController.updateKeyboardMapping();
+	EmuControls::updateKeyboardMapping();
 }
 
 void updateVControllerKeyboardMapping(uint mode, SysVController::KbMap &map)
@@ -167,9 +168,9 @@ uint EmuSystem::translateInputAction(uint input, bool &turbo)
 		case msxKeyIdxRightUp: return EC_JOY1_RIGHT | (EC_JOY1_UP << 8);
 		case msxKeyIdxRightDown: return EC_JOY1_RIGHT | (EC_JOY1_DOWN << 8);
 		case msxKeyIdxLeftDown: return EC_JOY1_LEFT | (EC_JOY1_DOWN << 8);
-		case msxKeyIdxJS1BtnTurbo: turbo = 1;
+		case msxKeyIdxJS1BtnTurbo: turbo = 1; [[fallthrough]];
 		case msxKeyIdxJS1Btn: return EC_JOY1_BUTTON1;
-		case msxKeyIdxJS2BtnTurbo: turbo = 1;
+		case msxKeyIdxJS2BtnTurbo: turbo = 1; [[fallthrough]];
 		case msxKeyIdxJS2Btn: return EC_JOY1_BUTTON2;
 
 		case msxKeyIdxUp2: return EC_JOY2_UP;
@@ -180,9 +181,9 @@ uint EmuSystem::translateInputAction(uint input, bool &turbo)
 		case msxKeyIdxRightUp2: return EC_JOY2_RIGHT | (EC_JOY2_UP << 8);
 		case msxKeyIdxRightDown2: return EC_JOY2_RIGHT | (EC_JOY2_DOWN << 8);
 		case msxKeyIdxLeftDown2: return EC_JOY2_LEFT | (EC_JOY2_DOWN << 8);
-		case msxKeyIdxJS1BtnTurbo2: turbo = 1;
+		case msxKeyIdxJS1BtnTurbo2: turbo = 1; [[fallthrough]];
 		case msxKeyIdxJS1Btn2: return EC_JOY2_BUTTON1;
-		case msxKeyIdxJS2BtnTurbo2: turbo = 1;
+		case msxKeyIdxJS2BtnTurbo2: turbo = 1; [[fallthrough]];
 		case msxKeyIdxJS2Btn2: return EC_JOY2_BUTTON2;
 
 		case msxKeyIdxColeco0Num ... msxKeyIdxColecoHash :
@@ -193,7 +194,7 @@ uint EmuSystem::translateInputAction(uint input, bool &turbo)
 		case msxKeyIdxToggleKb: return EC_KEYCOUNT;
 		case msxKeyIdxKbStart ... msxKeyIdxKbEnd :
 			return (input - msxKeyIdxKbStart) + 1;
-		default: bug_branch("%d", input);
+		default: bug_unreachable("input == %d", input);
 	}
 	return 0;
 }
@@ -204,7 +205,7 @@ void EmuSystem::handleInputAction(uint state, uint emuKey)
 	if(event1 == EC_KEYCOUNT)
 	{
 		if(state == Input::PUSHED)
-			vController.toggleKeyboard();
+			EmuControls::toggleKeyboard();
 	}
 	else
 	{
@@ -218,7 +219,7 @@ void EmuSystem::handleInputAction(uint state, uint emuKey)
 	}
 }
 
-void EmuSystem::clearInputBuffers()
+void EmuSystem::clearInputBuffers(EmuInputView &)
 {
 	IG::fillData(eventMap);
 }

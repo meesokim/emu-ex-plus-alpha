@@ -13,13 +13,18 @@
 	You should have received a copy of the GNU General Public License
 	along with 2600.emu.  If not, see <http://www.gnu.org/licenses/> */
 
+// TODO: Some Stella types collide with MacTypes.h
+#define BytePtr BytePtrMac
+#define Debugger DebuggerMac
 #include <emuframework/EmuApp.hh>
+#undef BytePtr
+#undef Debugger
 #include <FrameBuffer.hxx>
 #include <stella/emucore/TIA.hxx>
 
 void FrameBuffer::showMessage(const string& message, int position, bool force, uInt32 color)
 {
-	popup.printf(3, false, "%s", message.c_str());
+	EmuApp::printfMessage(3, false, "%s", message.c_str());
 }
 
 void FrameBuffer::enablePhosphor(bool enable, int blend)

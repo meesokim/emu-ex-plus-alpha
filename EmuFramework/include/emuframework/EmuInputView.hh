@@ -16,7 +16,6 @@
 	along with EmuFramework.  If not, see <http://www.gnu.org/licenses/> */
 
 #include <imagine/gui/View.hh>
-#include <emuframework/EmuOptions.hh>
 #include <emuframework/EmuVideo.hh>
 
 class EmuInputView : public View
@@ -28,12 +27,12 @@ private:
 	IG::WindowRect rect{};
 
 public:
-	EmuInputView(Base::Window &win): View(win) {}
-	IG::WindowRect &viewRect() override { return rect; }
-	void place() override;
-	void draw() override;
-	void inputEvent(Input::Event e) override;
-	void onAddedToController(Input::Event e) override {}
+	EmuInputView(ViewAttachParams attach): View(attach) {}
+	IG::WindowRect &viewRect() final { return rect; }
+	void place() final;
+	void draw() final;
+	bool inputEvent(Input::Event e) final;
+	void onAddedToController(Input::Event e) final {}
 	void resetInput();
 
 private:

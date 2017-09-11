@@ -239,14 +239,14 @@ static void setCurrentContext(GLDisplay display, GLXContext context, GLDrawable 
 		assert(!win);
 		if(!glXMakeContextCurrent(dpy, None, None, nullptr))
 		{
-			bug_exit("error setting no context current");
+			logErr("error setting no context current");
 		}
 	}
 	else if(win)
 	{
 		if(!glXMakeContextCurrent(dpy, win.drawable(), win.drawable(), context))
 		{
-			bug_exit("error setting window %lld current", (long long)win.drawable());
+			logErr("error setting window %lld current", (long long)win.drawable());
 		}
 	}
 	else
@@ -258,7 +258,7 @@ static void setCurrentContext(GLDisplay display, GLXContext context, GLDrawable 
 			auto dummyPbuff = glXCreatePbuffer(dpy, dummyPbuffConfig, pbuffAttr);
 			if(!glXMakeContextCurrent(dpy, dummyPbuff, dummyPbuff, context))
 			{
-				bug_exit("error setting dummy pbuffer current");
+				logErr("error setting dummy pbuffer current");
 			}
 			glXDestroyPbuffer(dpy, dummyPbuff);
 		}
@@ -267,7 +267,7 @@ static void setCurrentContext(GLDisplay display, GLXContext context, GLDrawable 
 			logMsg("setting no drawable current");
 			if(!glXMakeContextCurrent(dpy, None, None, context))
 			{
-				bug_exit("error setting no drawable current");
+				logErr("error setting no drawable current");
 			}
 		}
 	}
@@ -338,6 +338,11 @@ bool GLContext::bindAPI(API api)
 void *GLContext::procAddress(const char *funcName)
 {
 	return (void*)glXGetProcAddress((const GLubyte*)funcName);
+}
+
+NativeGLContext GLContext::nativeObject()
+{
+	return context;
 }
 
 Base::NativeWindowFormat GLBufferConfig::windowFormat(GLDisplay display)

@@ -14,6 +14,7 @@
 	along with MD.emu.  If not, see <http://www.gnu.org/licenses/> */
 
 #include <emuframework/EmuApp.hh>
+#include <emuframework/EmuInput.hh>
 #include "internal.hh"
 
 extern "C"
@@ -117,16 +118,16 @@ uint EmuSystem::translateInputAction(uint input, bool &turbo)
 		case neogeoKeyIdxLeftDown: return LEFT | DOWN | playerMask;
 		case neogeoKeyIdxSelect: return SELECT_COIN_EMU_INPUT | playerMask;
 		case neogeoKeyIdxStart: return START_EMU_INPUT | playerMask;
-		case neogeoKeyIdxXTurbo: turbo = 1;
+		case neogeoKeyIdxXTurbo: turbo = 1; [[fallthrough]];
 		case neogeoKeyIdxX: return C | playerMask;
-		case neogeoKeyIdxYTurbo: turbo = 1;
+		case neogeoKeyIdxYTurbo: turbo = 1; [[fallthrough]];
 		case neogeoKeyIdxY: return D | playerMask;
-		case neogeoKeyIdxATurbo: turbo = 1;
+		case neogeoKeyIdxATurbo: turbo = 1; [[fallthrough]];
 		case neogeoKeyIdxA: return A | playerMask;
-		case neogeoKeyIdxBTurbo: turbo = 1;
+		case neogeoKeyIdxBTurbo: turbo = 1; [[fallthrough]];
 		case neogeoKeyIdxB: return B | playerMask;
 		case neogeoKeyIdxABC: return A | B | C | playerMask;
-		default: bug_branch("%d", input);
+		default: bug_unreachable("input == %d", input);
 	}
 	return 0;
 }
@@ -173,7 +174,7 @@ void EmuSystem::handleInputAction(uint state, uint emuKey)
 	}
 }
 
-void EmuSystem::clearInputBuffers()
+void EmuSystem::clearInputBuffers(EmuInputView &)
 {
 	memory.intern_coin = 0x7;
 	memory.intern_start = 0x8F;

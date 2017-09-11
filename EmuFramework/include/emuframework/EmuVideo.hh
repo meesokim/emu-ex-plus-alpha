@@ -15,6 +15,7 @@
 	You should have received a copy of the GNU General Public License
 	along with EmuFramework.  If not, see <http://www.gnu.org/licenses/> */
 
+#include <imagine/gfx/Gfx.hh>
 #include <imagine/gfx/Texture.hh>
 
 class EmuVideo;
@@ -52,33 +53,22 @@ private:
 class EmuVideo
 {
 public:
+	Gfx::Renderer &r;
 	Gfx::PixmapTexture vidImg{};
 	IG::MemPixmap memPix{};
 	bool screenshotNextFrame = false;
 
-	// TODO: remove old API members when all systems updated
-	IG::Pixmap vidPix{};
-	char *pixBuff{};
-	uint vidPixAlign = Gfx::Texture::MAX_ASSUME_ALIGN;
-
 public:
-	EmuVideo() {}
-	void initFormat(IG::PixelFormat format);
-	void reinitImage();
-	void resizeImage(uint x, uint y, uint pitch = 0);
-	void initImage(bool force, uint x, uint y, uint pitch = 0);
+	EmuVideo(Gfx::Renderer &r): r{r} {}
+	void setFormat(IG::PixmapDesc desc);
+	void resetImage();
 	EmuVideoImage startFrame();
 	void writeFrame(Gfx::LockedTextureBuffer texBuff);
 	void writeFrame(IG::Pixmap pix);
 	void takeGameScreenshot();
 	bool isExternalTexture();
-
-	// TODO: remove old API methods when all systems updated
-	void initPixmap(char *pixBuff, IG::PixelFormat format, uint x, uint y, uint pitch = 0);
-	void resizeImage(uint xO, uint yO, uint x, uint y, uint totalX, uint totalY, uint pitch = 0);
-	void initImage(bool force, uint xO, uint yO, uint x, uint y, uint totalX, uint totalY, uint pitch = 0);
-	void clearImage();
-	void updateImage();
+	Gfx::Renderer &renderer() { return r; }
+	IG::WP size() const;
 
 protected:
 	void doScreenshot(IG::Pixmap pix);

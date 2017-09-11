@@ -35,7 +35,6 @@ uint fceuCheats = 0;
 ESI nesInputPortDev[2]{SI_UNSET, SI_UNSET};
 uint autoDetectedRegion = 0;
 static constexpr auto pixFmt = IG::PIXEL_FMT_RGB565;
-static bool usingZapper = 0;
 const char *fceuReturnedError = {};
 static uint16 nativeCol[256]{};
 static const uint nesPixX = 256, nesPixY = 240, nesVisiblePixY = 224;
@@ -108,44 +107,35 @@ void EmuSystem::reset(ResetMode mode)
 		FCEUI_ResetNES();
 }
 
-static char saveSlotChar(int slot)
+static char saveSlotCharNES(int slot)
 {
 	switch(slot)
 	{
 		case -1: return 's';
-		case 0 ... 9: return 48 + slot;
-		default: bug_branch("%d", slot); return 0;
+		case 0 ... 9: return '0' + slot;
+		default: bug_unreachable("slot == %d", slot); return 0;
 	}
 }
 
 FS::PathString EmuSystem::sprintStateFilename(int slot, const char *statePath, const char *gameName)
 {
-	return FS::makePathStringPrintf("%s/%s.fc%c", statePath, gameName, saveSlotChar(slot));
+	return FS::makePathStringPrintf("%s/%s.fc%c", statePath, gameName, saveSlotCharNES(slot));
 }
 
-std::error_code EmuSystem::saveState()
+EmuSystem::Error EmuSystem::saveState(const char *path)
 {
-	auto saveStr = sprintStateFilename(saveStateSlot);
-	fixFilePermissions(saveStr);
-	if(!FCEUI_SaveState(saveStr.data()))
-		return {EIO, std::system_category()};
+	if(!FCEUI_SaveState(path))
+		return EmuSystem::makeFileWriteError();
 	else
 		return {};
 }
 
-std::system_error EmuSystem::loadState(int saveStateSlot)
+EmuSystem::Error EmuSystem::loadState(const char *path)
 {
-	auto saveStr = sprintStateFilename(saveStateSlot);
-	if(FS::exists(saveStr))
-	{
-		logMsg("loading state %s", saveStr.data());
-		if(!FCEUI_LoadState(saveStr.data()))
-			return {{EIO, std::system_category()}};
-		else
-			return {{}};
-	}
+	if(!FCEUI_LoadState(path))
+		return EmuSystem::makeFileReadError();
 	else
-		return {{ENOENT, std::system_category()}};
+		return {};
 }
 
 void EmuSystem::saveBackupMem() // for manually saving when not closing game
@@ -159,16 +149,6 @@ void EmuSystem::saveBackupMem() // for manually saving when not closing game
 		else
 			GameInterface(GI_WRITESAVE);
 		FCEU_FlushGameCheats(0, 0, false);
-	}
-}
-
-void EmuSystem::saveAutoState()
-{
-	if(gameIsRunning() && optionAutoSaveState)
-	{
-		auto saveStr = sprintStateFilename(-1);
-		fixFilePermissions(saveStr);
-		FCEUI_SaveState(saveStr.data());
 	}
 }
 
@@ -187,7 +167,7 @@ void FCEUD_SetPalette(uint8 index, uint8 r, uint8 g, uint8 b)
 
 void FCEUD_GetPalette(uint8 index, uint8 *r, uint8 *g, uint8 *b)
 {
-	bug_exit("called FCEUD_GetPalette()");
+	bug_unreachable("called FCEUD_GetPalette()");
 	/**r = palData[index][0];
 	*g = palData[index][1];
 	*b = palData[index][2];*/
@@ -200,11 +180,11 @@ static void cacheUsingZapper()
 	{
 		if(joyports[i].type == SI_ZAPPER)
 		{
-			usingZapper = 1;
+			usingZapper = true;
 			return;
 		}
 	}
-	usingZapper = 0;
+	usingZapper = false;
 }
 
 static const char* fceuInputToStr(int input)
@@ -215,7 +195,7 @@ static const char* fceuInputToStr(int input)
 		case SI_GAMEPAD: return "Gamepad";
 		case SI_ZAPPER: return "Zapper";
 		case SI_NONE: return "None";
-		default: bug_branch("%d", input); return 0;
+		default: bug_unreachable("input == %d", input); return 0;
 	}
 }
 
@@ -289,9 +269,22 @@ static int regionFromName(const char *name)
 	return 0; // NTSC
 }
 
-static int loadGameCommon(int detectedRegion)
+EmuSystem::Error EmuSystem::loadGame(IO &io, OnLoadProgressDelegate)
 {
-	emuVideo.initImage(false, nesPixX, nesVisiblePixY);
+	setDirOverrides();
+	auto ioStream = new EMUFILE_IO(io);
+	auto file = new FCEUFILE();
+	file->filename = fullGamePath();
+	file->logicalPath = fullGamePath();
+	file->fullFilename = fullGamePath();
+	file->archiveIndex = -1;
+	file->stream = ioStream;
+	file->size = ioStream->size();
+	if(!FCEUI_LoadGameWithFile(file, originalGameFileName().data(), 0))
+	{
+		return EmuSystem::makeError("Error loading game");
+	}
+	autoDetectedRegion = regionFromName(gameFileName().data());
 	if((int)optionVideoSystem)
 	{
 		logMsg("Forced region:%s", regionToStr(optionVideoSystem - 1));
@@ -300,7 +293,7 @@ static int loadGameCommon(int detectedRegion)
 	else
 	{
 		logMsg("Detected region:%s", regionToStr(autoDetectedRegion));
-		FCEUI_SetRegion(detectedRegion, false);
+		FCEUI_SetRegion(autoDetectedRegion, false);
 	}
 
 	FCEUI_ListCheats(cheatCallback, 0);
@@ -308,61 +301,23 @@ static int loadGameCommon(int detectedRegion)
 		logMsg("%d total cheats", fceuCheats);
 
 	setupNESInputPorts();
-	EmuSystem::configAudioPlayback();
 
-	logMsg("started emu");
-	return 1;
+	return {};
 }
 
-int EmuSystem::loadGame(const char *path)
+void EmuSystem::onPrepareVideo(EmuVideo &video)
 {
-	bug_exit("should only use loadGameFromIO()");
-	return 0;
+	video.setFormat({{nesPixX, nesVisiblePixY}, pixFmt});
 }
 
-int EmuSystem::loadGameFromIO(IO &io, const char *path, const char *origFilename)
+void EmuSystem::configAudioRate(double frameTime, int rate)
 {
-	closeGame();
-	setupGamePaths(path);
-	setDirOverrides();
-	auto ioStream = new EMUFILE_IO(io);
-	auto file = new FCEUFILE();
-	file->filename = path;
-	file->logicalPath = path;
-	file->fullFilename = path;
-	file->archiveIndex = -1;
-	file->stream = ioStream;
-	file->size = ioStream->size();
-	if(!FCEUI_LoadGameWithFile(file, path, 0))
-	{
-		popup.post("Error loading game", 1);
-		return 0;
-	}
-	autoDetectedRegion = regionFromName(FS::basename(path).data());
-	return loadGameCommon(autoDetectedRegion);
-}
-
-void EmuSystem::configAudioRate(double frameTime)
-{
-	pcmFormat.rate = optionSoundRate;
-	const double ntscFrameRate = 21477272.0 / 357366.0;
-	const double palFrameRate = 21281370.0 / 425568.0;
+	constexpr double ntscFrameRate = 21477272.0 / 357366.0;
+	constexpr double palFrameRate = 21281370.0 / 425568.0;
 	double systemFrameRate = vidSysIsPAL() ? palFrameRate : ntscFrameRate;
-	double rate = std::round(optionSoundRate * (systemFrameRate * frameTime));
-	FCEUI_Sound(rate);
+	double mixRate = std::round(rate * (systemFrameRate * frameTime));
+	FCEUI_Sound(mixRate);
 	logMsg("set NES audio rate %d", FSettings.SndRate);
-}
-
-void FCEUD_frameReady(uint8 *buf, bool display)
-{
-	auto img = emuVideo.startFrame();
-	auto pix = img.pixmap();
-	IG::Pixmap ppuPix{{{256, 256}, IG::PIXEL_FMT_I8}, buf};
-	auto ppuPixRegion = ppuPix.subPixmap({0, 8}, {256, 224});
-	pix.writeTransformed([](uint8 p){ return nativeCol[p]; }, ppuPixRegion);
-	img.endFrame();
-	if(display)
-		updateAndDrawEmuVideo();
 }
 
 void FCEUD_emulateSound(bool renderAudio)
@@ -383,10 +338,21 @@ void FCEUD_emulateSound(bool renderAudio)
 	}
 }
 
-void EmuSystem::runFrame(bool renderGfx, bool processGfx, bool renderAudio)
+void EmuSystem::runFrame(EmuVideo &video, bool renderGfx, bool processGfx, bool renderAudio)
 {
-	FCEUI_Emulate(renderGfx, processGfx ? 0 : 1, renderAudio);
-	// FCEUI_Emulate calls FCEUD_commitVideo & FCEUD_emulateSound depending on parameters
+	FCEUI_Emulate(
+		[&video, renderGfx](uint8 *buf)
+		{
+			auto img = video.startFrame();
+			auto pix = img.pixmap();
+			IG::Pixmap ppuPix{{{256, 256}, IG::PIXEL_FMT_I8}, buf};
+			auto ppuPixRegion = ppuPix.subPixmap({0, 8}, {256, 224});
+			pix.writeTransformed([](uint8 p){ return nativeCol[p]; }, ppuPixRegion);
+			img.endFrame();
+			if(renderGfx)
+				EmuApp::updateAndDrawEmuVideo();
+		}, processGfx ? 0 : 1, renderAudio);
+	// FCEUI_Emulate calls FCEUD_emulateSound depending on parameters
 }
 
 void EmuSystem::savePathChanged()
@@ -395,7 +361,7 @@ void EmuSystem::savePathChanged()
 		setDirOverrides();
 }
 
-void EmuSystem::onCustomizeNavView(EmuNavView &view)
+void EmuApp::onCustomizeNavView(EmuApp::NavView &view)
 {
 	const Gfx::LGradientStopDesc navViewGrad[] =
 	{
@@ -408,53 +374,13 @@ void EmuSystem::onCustomizeNavView(EmuNavView &view)
 	view.setBackgroundGradient(navViewGrad);
 }
 
-void EmuSystem::onMainWindowCreated(Base::Window &win)
-{
-	win.setOnInputEvent(
-		[](Base::Window &win, Input::Event e)
-		{
-			if(EmuSystem::isActive())
-			{
-				if(unlikely(e.isPointer() && usingZapper))
-				{
-					if(e.state == Input::PUSHED)
-					{
-						zapperData[2] = 0;
-						if(emuVideoLayer.gameRect().overlaps({e.x, e.y}))
-						{
-							int xRel = e.x - emuVideoLayer.gameRect().x, yRel = e.y - emuVideoLayer.gameRect().y;
-							int xNes = IG::scalePointRange((float)xRel, (float)emuVideoLayer.gameRect().xSize(), (float)256.);
-							int yNes = IG::scalePointRange((float)yRel, (float)emuVideoLayer.gameRect().ySize(), (float)224.) + 8;
-							logMsg("zapper pushed @ %d,%d, on NES %d,%d", e.x, e.y, xNes, yNes);
-							zapperData[0] = xNes;
-							zapperData[1] = yNes;
-							zapperData[2] |= 0x1;
-						}
-						else // off-screen shot
-						{
-							zapperData[0] = 0;
-							zapperData[1] = 0;
-							zapperData[2] |= 0x2;
-						}
-					}
-					else if(e.state == Input::RELEASED)
-					{
-						zapperData[2] = 0;
-					}
-				}
-			}
-			handleInputEvent(win, e);
-		});
-}
-
-CallResult EmuSystem::onInit()
+EmuSystem::Error EmuSystem::onInit()
 {
 	EmuSystem::pcmFormat.channels = 1;
-	emuVideo.initFormat(pixFmt);
 	backupSavestates = 0;
 	if(!FCEUI_Initialize())
 	{
-		bug_exit("error in FCEUI_Initialize");
+		return makeError("Error in FCEUI_Initialize");
 	}
-	return OK;
+	return {};
 }

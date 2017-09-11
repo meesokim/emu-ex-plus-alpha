@@ -18,15 +18,11 @@
 #include <imagine/data-type/image/sys.hh>
 #include <imagine/mem/mem.h>
 #include <emuframework/EmuSystem.hh>
-#include <emuframework/EmuInput.hh>
 #include <emuframework/EmuOptions.hh>
 #include <emuframework/EmuApp.hh>
 #include <emuframework/InputManagerView.hh>
-#ifdef CONFIG_EMUFRAMEWORK_VCONTROLS
-#include <emuframework/VController.hh>
-SysVController vController;
-uint pointerInputPlayer = 0;
-#endif
+#include "private.hh"
+#include "privateInput.hh"
 
 struct RelPtr  // for Android trackball
 {
@@ -35,12 +31,11 @@ struct RelPtr  // for Android trackball
 };
 static RelPtr relPtr{};
 
-TurboInput turboActions;
-uint inputDevConfs = 0;
-InputDeviceConfig inputDevConf[Input::MAX_DEVS];
-StaticDLList<InputDeviceSavedConfig, MAX_SAVED_INPUT_DEVICES> savedInputDevList;
-KeyMapping keyMapping;
-StaticDLList<KeyConfig, MAX_CUSTOM_KEY_CONFIGS> customKeyConfig;
+TurboInput turboActions{};
+std::vector<InputDeviceConfig> inputDevConf{};
+std::list<InputDeviceSavedConfig> savedInputDevList{};
+std::list<KeyConfig> customKeyConfig{};
+KeyMapping keyMapping{};
 bool physicalControlsPresent = false;
 bool touchControlsAreOn = false;
 VControllerLayoutPosition vControllerLayoutPos[2][7];
@@ -59,11 +54,11 @@ static int vControllerPixelSize()
 }
 #endif
 
-void initVControls()
+void initVControls(Gfx::Renderer &r)
 {
 	#ifdef CONFIG_VCONTROLS_GAMEPAD
-	vController.gp.dp.setDeadzone(vController.xMMSizeToPixel(mainWin.win, int(optionTouchDpadDeadzone) / 100.));
-	vController.gp.dp.setDiagonalSensitivity(optionTouchDpadDiagonalSensitivity / 1000.);
+	vController.gp.dp.setDeadzone(r, vController.xMMSizeToPixel(mainWin.win, int(optionTouchDpadDeadzone) / 100.));
+	vController.gp.dp.setDiagonalSensitivity(r, optionTouchDpadDiagonalSensitivity / 1000.);
 	vController.setBoundingAreaVisible(optionTouchCtrlBoundingBoxes);
 	vController.init((int)optionTouchCtrlAlpha / 255.0, vControllerPixelSize(), View::defaultFace.nominalHeight()*1.75, mainWin.projectionPlane);
 	#else
@@ -197,33 +192,33 @@ IG::Point2D<int> vControllerLayoutToPixelPos(VControllerLayoutPosition lPos)
 void processRelPtr(Input::Event e)
 {
 	using namespace IG;
-	if(relPtr.x != 0 && sign(relPtr.x) != sign(e.x))
+	if(relPtr.x != 0 && sign(relPtr.x) != sign(e.pos().x))
 	{
 		//logMsg("reversed trackball X direction");
-		relPtr.x = e.x;
+		relPtr.x = e.pos().x;
 		EmuSystem::handleInputAction(Input::RELEASED, relPtr.xAction);
 	}
 	else
-		relPtr.x += e.x;
+		relPtr.x += e.pos().x;
 
-	if(e.x)
+	if(e.pos().x)
 	{
-		relPtr.xAction = EmuSystem::translateInputAction(e.x > 0 ? EmuControls::systemKeyMapStart+1 : EmuControls::systemKeyMapStart+3);
+		relPtr.xAction = EmuSystem::translateInputAction(e.pos().x > 0 ? EmuControls::systemKeyMapStart+1 : EmuControls::systemKeyMapStart+3);
 		EmuSystem::handleInputAction(Input::PUSHED, relPtr.xAction);
 	}
 
-	if(relPtr.y != 0 && sign(relPtr.y) != sign(e.y))
+	if(relPtr.y != 0 && sign(relPtr.y) != sign(e.pos().y))
 	{
 		//logMsg("reversed trackball Y direction");
-		relPtr.y = e.y;
+		relPtr.y = e.pos().y;
 		EmuSystem::handleInputAction(Input::RELEASED, relPtr.yAction);
 	}
 	else
-		relPtr.y += e.y;
+		relPtr.y += e.pos().y;
 
-	if(e.y)
+	if(e.pos().y)
 	{
-		relPtr.yAction = EmuSystem::translateInputAction(e.y > 0 ? EmuControls::systemKeyMapStart+2 : EmuControls::systemKeyMapStart);
+		relPtr.yAction = EmuSystem::translateInputAction(e.pos().y > 0 ? EmuControls::systemKeyMapStart+2 : EmuControls::systemKeyMapStart);
 		EmuSystem::handleInputAction(Input::PUSHED, relPtr.yAction);
 	}
 
@@ -291,7 +286,7 @@ bool isMenuDismissKey(Input::Event e)
 	Key dismissKey2 = Keycode::GAME_Y;
 	if(Config::envIsWebOS1)
 		dismissKey = Keycode::RCTRL;
-	if(Config::MACHINE_IS_PANDORA && e.device->subtype() == Device::SUBTYPE_PANDORA_HANDHELD)
+	if(Config::MACHINE_IS_PANDORA && e.device()->subtype() == Device::SUBTYPE_PANDORA_HANDHELD)
 	{
 		if(modalViewController.hasView()) // make sure not performing text input
 			return false;
@@ -302,25 +297,23 @@ bool isMenuDismissKey(Input::Event e)
 
 void updateInputDevices()
 {
-	using namespace Input;
 	int i = 0;
-	for(auto &e : devList)
+	inputDevConf.clear();
+	for(auto &e : Input::deviceList())
 	{
 		logMsg("input device %d: name: %s, id: %d, map: %d", i, e->name(), e->enumId(), e->map());
-		inputDevConf[i].dev = e;
-		inputDevConf[i].reset();
+		inputDevConf.emplace_back(e);
 		for(auto &saved : savedInputDevList)
 		{
 			if(saved.matchesDevice(*e))
 			{
 				logMsg("has saved config");
-				inputDevConf[i].setSavedConf(&saved);
+				inputDevConf.back().setSavedConf(&saved);
 			}
 		}
 		i++;
 	}
-	inputDevConfs = i;
-	physicalControlsPresent = keyInputIsPresent();
+	physicalControlsPresent = Input::keyInputIsPresent();
 	if(physicalControlsPresent)
 	{
 		logMsg("Physical controls are present");
@@ -400,7 +393,7 @@ const KeyConfig *KeyConfig::defaultConfigsForDevice(const Input::Device &dev, ui
 	auto conf = defaultConfigsForInputMap(dev.map(), size);
 	if(!conf)
 	{
-		bug_exit("device type %d missing default configs", dev.map());
+		bug_unreachable("device type %d missing default configs", dev.map());
 		return nullptr;
 	}
 	return conf;
@@ -414,20 +407,12 @@ const KeyConfig *KeyConfig::defaultConfigsForDevice(const Input::Device &dev)
 
 // InputDeviceConfig
 
-void InputDeviceConfig::reset()
-{
-	assert(dev);
-	savedConf = nullptr;
-	player = dev->enumId() < EmuSystem::maxPlayers ? dev->enumId() : 0;
-	enabled = 1;
-}
-
 void InputDeviceConfig::deleteConf()
 {
 	if(savedConf)
 	{
 		logMsg("removing device config for %s", savedConf->name);
-		auto removed = savedInputDevList.remove(*savedConf);
+		auto removed = IG::removeFirst(savedInputDevList, *savedConf);
 		assert(removed);
 		savedConf = nullptr;
 	}
@@ -476,16 +461,10 @@ const KeyConfig &InputDeviceConfig::keyConf()
 	return KeyConfig::defaultConfigForDevice(*dev);
 }
 
-bool InputDeviceConfig::setKeyConf(const KeyConfig &kConf)
+void InputDeviceConfig::setKeyConf(const KeyConfig &kConf)
 {
 	save();
-	if(!savedConf)
-	{
-		logErr("can't set key config");
-		return 0;
-	}
 	savedConf->keyConf = &kConf;
-	return 1;
 }
 
 void InputDeviceConfig::setDefaultKeyConf()
@@ -513,20 +492,11 @@ KeyConfig *InputDeviceConfig::mutableKeyConf()
 
 KeyConfig *InputDeviceConfig::setKeyConfCopiedFromExisting(const char *name)
 {
-	if(!customKeyConfig.addToEnd())
-	{
-		bug_exit("should no be called with full key config list");
-		return nullptr;
-	}
+	customKeyConfig.emplace_back();
 	auto &newConf = customKeyConfig.back();
 	newConf = keyConf();
 	string_copy(newConf.name, name);
-	if(!setKeyConf(newConf))
-	{
-		// No space left for new device settings
-		customKeyConfig.pop_back();
-		return nullptr;
-	}
+	setKeyConf(newConf);
 	return &newConf;
 }
 
@@ -534,12 +504,8 @@ void InputDeviceConfig::save()
 {
 	if(!savedConf)
 	{
-		if(!savedInputDevList.addToEnd())
-		{
-			logWarn("no more space for device configs");
-			return;
-		}
-		logMsg("allocated new device config, %d total", savedInputDevList.size());
+		savedInputDevList.emplace_back();
+		logMsg("allocated new device config, %d total", (int)savedInputDevList.size());
 		savedConf = &savedInputDevList.back();
 		*savedConf = InputDeviceSavedConfig();
 	}
@@ -571,16 +537,19 @@ void InputDeviceConfig::setSavedConf(InputDeviceSavedConfig *savedConf)
 
 void KeyMapping::buildAll()
 {
-	assert(inputDevConfs == Input::devList.size());
+	assert(inputDevConf.size() == Input::deviceList().size());
+	if(inputDevActionTablePtr)
+	{
+		mem_free(inputDevActionTablePtr[0]);
+	}
+	inputDevActionTablePtr = std::make_unique<ActionGroup*[]>(Input::deviceList().size());
 	// calculate & allocate complete map including all devices
 	{
 		uint totalKeys = 0;
-		for(auto &e : Input::devList)
+		for(auto &e : Input::deviceList())
 		{
 			totalKeys += Input::Event::mapNumKeys(e->map());
 		}
-		mem_free(inputDevActionTablePtr[0]);
-		inputDevActionTablePtr[0] = nullptr;
 		if(unlikely(!totalKeys))
 		{
 			logMsg("no keys in mapping");
@@ -591,7 +560,7 @@ void KeyMapping::buildAll()
 	}
 	uint totalKeys = 0;
 	int i = 0;
-	for(auto &e : Input::devList)
+	for(auto &e : Input::deviceList())
 	{
 		if(i)
 		{
@@ -661,31 +630,6 @@ void genericMultiplayerTranspose(KeyConfig::KeyArray &key, uint player, uint sta
 			std::fill_n(&key[category[i+startCategory].configOffset], category[i+startCategory].keys, 0);
 		}
 	}
-}
-
-void setupVolKeysInGame()
-{
-	#if defined __ANDROID__
-	iterateTimes(inputDevConfs, i)
-	{
-		if(!inputDevConf[i].enabled ||
-			inputDevConf[i].dev->map() != Input::Event::MAP_SYSTEM ||
-			!inputDevConf[i].savedConf) // no default configs use volume keys
-		{
-			continue;
-		}
-		auto key = inputDevConf[i].keyConf().key();
-		iterateTimes(MAX_KEY_CONFIG_KEYS, k)
-		{
-			if(Input::isVolumeKey(key[k]))
-			{
-				logMsg("key config has volume keys");
-				Input::setHandleVolumeKeys(1);
-				return;
-			}
-		}
-	}
-	#endif
 }
 
 #ifdef CONFIG_EMUFRAMEWORK_VCONTROLS
@@ -768,17 +712,18 @@ void updateAutoOnScreenControlVisible()
 
 void updateVControlImg()
 {
+	auto &r = vController.renderer;
 	#ifdef CONFIG_VCONTROLS_GAMEPAD
 	{
 		static Gfx::PixmapTexture overlayImg;
 		PngFile png;
 		auto filename =	"overlays128.png";
-		auto ec = png.loadAsset(filename);
-		if(ec)
+		if(auto ec = png.loadAsset(filename);
+			ec)
 		{
-			bug_exit("couldn't load overlay png");
+			logErr("couldn't load overlay png");
 		}
-		overlayImg.init(png);
+		overlayImg.init(r, png);
 		vController.setImg(overlayImg);
 	}
 	#endif
@@ -786,14 +731,38 @@ void updateVControlImg()
 	{
 		static Gfx::PixmapTexture kbOverlayImg;
 		PngFile png;
-		auto ec = png.loadAsset("kbOverlay.png");
-		if(ec)
+		if(auto ec = png.loadAsset("kbOverlay.png");
+			ec)
 		{
-			bug_exit("couldn't load kb overlay png");
+			logErr("couldn't load kb overlay png");
 		}
-		kbOverlayImg.init(png);
-		vController.kb.setImg(&kbOverlayImg);
+		kbOverlayImg.init(r, png);
+		vController.kb.setImg(r, &kbOverlayImg);
 	}
+}
+
+void setActiveFaceButtons(uint btns)
+{
+	#ifdef CONFIG_VCONTROLS_GAMEPAD
+	vController.gp.activeFaceBtns = btns;
+	setupVControllerVars();
+	vController.place();
+	EmuSystem::clearInputBuffers(emuInputView);
+	#endif
+}
+
+void updateKeyboardMapping()
+{
+	#ifdef CONFIG_VCONTROLS_GAMEPAD
+	vController.updateKeyboardMapping();
+	#endif
+}
+
+void toggleKeyboard()
+{
+	#ifdef CONFIG_VCONTROLS_GAMEPAD
+	vController.toggleKeyboard();
+	#endif
 }
 
 }
@@ -823,4 +792,26 @@ void TurboInput::removeEvent(uint action)
 			logMsg("removed turbo event action %d", action);
 		}
 	}
+}
+
+bool KeyConfig::operator ==(KeyConfig const& rhs) const
+{
+	return string_equal(name, rhs.name);
+}
+
+KeyConfig::Key *KeyConfig::key(const KeyCategory &category)
+{
+	assert(category.configOffset + category.keys <= MAX_KEY_CONFIG_KEYS);
+	return &key_[category.configOffset];
+}
+
+const KeyConfig::Key *KeyConfig::key(const KeyCategory &category) const
+{
+	assert(category.configOffset + category.keys <= MAX_KEY_CONFIG_KEYS);
+	return &key_[category.configOffset];
+}
+
+void KeyConfig::unbindCategory(const KeyCategory &category)
+{
+	std::fill_n(key(category), category.keys, 0);
 }

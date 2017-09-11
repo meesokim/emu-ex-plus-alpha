@@ -14,10 +14,15 @@
 	along with EmuFramework.  If not, see <http://www.gnu.org/licenses/> */
 
 #include <emuframework/EmuView.hh>
-#include <emuframework/EmuInput.hh>
 #include <emuframework/VController.hh>
 #include <emuframework/EmuApp.hh>
 #include <algorithm>
+
+EmuView::EmuView(ViewAttachParams attach, EmuVideoLayer *layer, EmuInputView *inputView):
+	View{attach},
+	layer{layer},
+	inputView{inputView}
+{}
 
 void EmuView::draw()
 {
@@ -28,7 +33,7 @@ void EmuView::draw()
 	}
 	if(EmuSystem::isActive() && inputView)
 	{
-		loadTransform(projP.makeTranslate());
+		renderer().loadTransform(projP.makeTranslate());
 		inputView->draw();
 	}
 }
@@ -45,10 +50,16 @@ void EmuView::place()
 	}
 }
 
-void EmuView::inputEvent(Input::Event e)
+bool EmuView::inputEvent(Input::Event e)
 {
 	if(inputView)
 	{
-		inputView->inputEvent(e);
+		return inputView->inputEvent(e);
 	}
+	return false;
+}
+
+void EmuView::swapLayers(EmuView &view)
+{
+	std::swap(layer, view.layer);
 }

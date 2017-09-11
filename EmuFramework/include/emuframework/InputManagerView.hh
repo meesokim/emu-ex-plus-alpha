@@ -19,6 +19,10 @@
 #include <imagine/util/container/ArrayList.hh>
 #include <emuframework/MenuView.hh>
 #include <emuframework/EmuInput.hh>
+#include <vector>
+#include <array>
+
+struct InputDeviceConfig;
 
 class IdentInputDeviceView : public View
 {
@@ -29,22 +33,30 @@ public:
 	using OnIdentInputDelegate = DelegateFunc<void (Input::Event e)>;
 	OnIdentInputDelegate onIdentInput{};
 
-	IdentInputDeviceView(Base::Window &win): View(win) {}
-	~IdentInputDeviceView() override;
-	IG::WindowRect &viewRect() override { return viewFrame; }
+	IdentInputDeviceView(ViewAttachParams attach): View(attach) {}
+	~IdentInputDeviceView() final;
+	IG::WindowRect &viewRect() final { return viewFrame; }
 	void init();
-	void place() override;
-	void inputEvent(Input::Event e) override;
-	void draw() override;
-	void onAddedToController(Input::Event e) override {}
+	void place() final;
+	bool inputEvent(Input::Event e) final;
+	void draw() final;
+	void onAddedToController(Input::Event e) final {}
 };
 
 class InputManagerView : public TableView
 {
+public:
+	using DeviceNameString = std::array<char, MAX_INPUT_DEVICE_NAME_SIZE>;
+
+	InputManagerView(ViewAttachParams attach);
+	~InputManagerView();
+	void onShow() final;
+	const char *deviceName(uint idx) const;
+
 private:
-	char deviceConfigStr[MAX_SAVED_INPUT_DEVICES][MAX_INPUT_DEVICE_NAME_SIZE]{};
+	std::vector<DeviceNameString> deviceConfigStr{};
 	TextMenuItem deleteDeviceConfig{};
-	const char *profileStr[MAX_CUSTOM_KEY_CONFIGS]{};
+	std::vector<const char*> profileStr{};
 	TextMenuItem deleteProfile{};
 	#ifdef CONFIG_BASE_ANDROID
 	TextMenuItem rescanOSDevices{};
@@ -53,17 +65,11 @@ private:
 	TextMenuItem generalOptions{};
 	TextMenuItem systemOptions{};
 	TextHeadingMenuItem deviceListHeading{};
-	TextMenuItem inputDevName[Input::MAX_DEVS]{};
-	StaticArrayList<MenuItem*, Input::MAX_DEVS + 7> item{};
+	std::vector<TextMenuItem> inputDevName{};
+	std::vector<DeviceNameString> inputDevNameStr{};
+	std::vector<MenuItem*> item{};
 
 	void loadItems();
-
-public:
-	char inputDevNameStr[Input::MAX_DEVS][80]{};
-
-	InputManagerView(Base::Window &win);
-	~InputManagerView();
-	void onShow() override;
 };
 
 class InputManagerOptionsView : public TableView
@@ -94,7 +100,7 @@ private:
 	StaticArrayList<MenuItem*, 10> item{};
 
 public:
-	InputManagerOptionsView(Base::Window &win);
+	InputManagerOptionsView(ViewAttachParams attach);
 };
 
 class InputManagerDeviceView : public TableView
@@ -124,7 +130,7 @@ private:
 	void loadItems();
 
 public:
-	InputManagerDeviceView(Base::Window &win, InputManagerView &rootIMView, InputDeviceConfig &devConf);
+	InputManagerDeviceView(ViewAttachParams attach, InputManagerView &rootIMView, InputDeviceConfig &devConf);
 	void setPlayer(int playerVal);
-	void onShow() override;
+	void onShow() final;
 };

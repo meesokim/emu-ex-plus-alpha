@@ -17,13 +17,16 @@
 #include <emuframework/MsgPopup.hh>
 #include <emuframework/EmuApp.hh>
 #include <imagine/gui/View.hh>
+#include <imagine/util/ScopeGuard.hh>
 #include <string>
+#include "private.hh"
 
 using namespace Base;
 
-void MsgPopup::init()
+void MsgPopup::init(Gfx::Renderer &renderer)
 {
 	//logMsg("init MsgPopup");
+	r = &renderer;
 	text = {nullptr, &View::defaultFace};
 	text.setString(str.data());
 	text.maxLines = 6;
@@ -43,7 +46,7 @@ void MsgPopup::place(const Gfx::ProjectionPlane &projP)
 	this->projP = projP;
 	text.maxLineSize = projP.w;
 	if(strlen(str.data()))
-		text.compile(projP);
+		text.compile(*r, projP);
 }
 
 void MsgPopup::unpost()
@@ -58,7 +61,7 @@ void MsgPopup::postContent(int secs, bool error)
 	assert(strlen(str.data()));
 	mainWin.win.postDraw();
 	logMsg("%s", str.data());
-	text.compile(projP);
+	text.compile(*r, projP);
 	this->error = error;
 	unpostTimer.callbackAfterSec([this](){unpost();}, secs, {});
 }
@@ -88,8 +91,13 @@ void MsgPopup::printf(uint secs, bool error, const char *format, ...)
 {
 	va_list args;
 	va_start(args, format);
+	auto vaEnd = IG::scopeGuard([&](){ va_end(args); });
+	vprintf(secs, error, format, args);
+}
+
+void MsgPopup::vprintf(uint secs, bool error, const char *format, va_list args)
+{
 	auto result = vsnprintf(str.data(), str.size(), format, args);
-	va_end(args);
 	postContent(secs, error);
 }
 
@@ -98,12 +106,12 @@ void MsgPopup::draw()
 	using namespace Gfx;
 	if(strlen(str.data()))
 	{
-		noTexProgram.use(projP.makeTranslate());
-		setBlendMode(BLEND_MODE_ALPHA);
+		r->noTexProgram.use(*r, projP.makeTranslate());
+		r->setBlendMode(BLEND_MODE_ALPHA);
 		if(error)
-			setColor(1., 0, 0, .7);
+			r->setColor(1., 0, 0, .7);
 		else
-			setColor(0, 0, 1., .7);
+			r->setColor(0, 0, 1., .7);
 		Gfx::GCRect rect(-projP.wHalf(), -projP.hHalf(),
 				projP.wHalf(), -projP.hHalf() + (text.ySize * 1.5));
 		#if CONFIG_ENV_WEBOS_OS >= 3
@@ -114,9 +122,9 @@ void MsgPopup::draw()
 			rect.y2 = projP.hHalf;
 		}
 		#endif
-		GeomRect::draw(rect);
-		setColor(1., 1., 1., 1.);
-		texAlphaProgram.use();
-		text.draw(0, projP.alignYToPixel(rect.y + (text.ySize * 1.5)/2.), C2DO, projP);
+		GeomRect::draw(*r, rect);
+		r->setColor(1., 1., 1., 1.);
+		r->texAlphaProgram.use(*r);
+		text.draw(*r, 0, projP.alignYToPixel(rect.y + (text.ySize * 1.5)/2.), C2DO, projP);
 	}
 }

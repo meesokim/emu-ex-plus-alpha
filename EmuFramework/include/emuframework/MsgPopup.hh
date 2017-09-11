@@ -21,9 +21,12 @@
 #include <imagine/gfx/GeomRect.hh>
 #include <imagine/base/Timer.hh>
 
+
+
 class MsgPopup
 {
 private:
+	Gfx::Renderer *r{};
 	Gfx::Text text{};
 	Gfx::ProjectionPlane projP{};
 	Base::Timer unpostTimer{};
@@ -34,7 +37,7 @@ private:
 
 public:
 	MsgPopup() {}
-	void init();
+	void init(Gfx::Renderer &r);
 	void clear();
 	void place(const Gfx::ProjectionPlane &projP);
 	void unpost();
@@ -46,4 +49,5 @@ public:
 
 	[[gnu::format(printf, 4, 5)]]
 	void printf(uint secs, bool error, const char *format, ...);
+	void vprintf(uint secs, bool error, const char *format, va_list args);
 };
